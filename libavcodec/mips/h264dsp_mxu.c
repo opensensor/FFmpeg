@@ -92,10 +92,10 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
     /* Column pass */
     for (i = 0; i < 4; i++) {
-        const int z0 =  block[i + 4*0]     + block[i + 4*2];
-        const int z1 =  block[i + 4*0]     - block[i + 4*2];
-        const int z2 = (block[i + 4*1]>>1) - block[i + 4*3];
-        const int z3 =  block[i + 4*1]     + (block[i + 4*3]>>1);
+        const unsigned int z0 =  block[i + 4*0]     +  (unsigned)block[i + 4*2];
+        const unsigned int z1 =  block[i + 4*0]     -  (unsigned)block[i + 4*2];
+        const unsigned int z2 = (block[i + 4*1]>>1) -  (unsigned)block[i + 4*3];
+        const unsigned int z3 =  block[i + 4*1]     + (unsigned)(block[i + 4*3]>>1);
 
         block[i + 4*0] = z0 + z3;
         block[i + 4*1] = z1 + z2;
@@ -105,15 +105,15 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
     /* Row pass + add to destination + clip */
     for (i = 0; i < 4; i++) {
-        const int z0 =  block[0 + 4*i]     + block[2 + 4*i];
-        const int z1 =  block[0 + 4*i]     - block[2 + 4*i];
-        const int z2 = (block[1 + 4*i]>>1) - block[3 + 4*i];
-        const int z3 =  block[1 + 4*i]     + (block[3 + 4*i]>>1);
+        const unsigned int z0 =  block[0 + 4*i]     +  (unsigned int)block[2 + 4*i];
+        const unsigned int z1 =  block[0 + 4*i]     -  (unsigned int)block[2 + 4*i];
+        const unsigned int z2 = (block[1 + 4*i]>>1) -  (unsigned int)block[3 + 4*i];
+        const unsigned int z3 =  block[1 + 4*i]     + (unsigned int)(block[3 + 4*i]>>1);
 
-        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((z0 + z3) >> 6));
-        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((z1 + z2) >> 6));
-        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((z1 - z2) >> 6));
-        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((z0 - z3) >> 6));
+        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((int)(z0 + z3) >> 6));
+        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((int)(z1 + z2) >> 6));
+        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((int)(z1 - z2) >> 6));
+        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((int)(z0 - z3) >> 6));
     }
 
     memset(block, 0, 16 * sizeof(int16_t));
@@ -129,25 +129,25 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
     /* Column pass */
     for (i = 0; i < 8; i++) {
-        const int a0 =  block[i+0*8] + block[i+4*8];
-        const int a2 =  block[i+0*8] - block[i+4*8];
-        const int a4 = (block[i+2*8]>>1) - block[i+6*8];
-        const int a6 = (block[i+6*8]>>1) + block[i+2*8];
+        const unsigned int a0 =  block[i+0*8] + (unsigned)block[i+4*8];
+        const unsigned int a2 =  block[i+0*8] - (unsigned)block[i+4*8];
+        const unsigned int a4 = (block[i+2*8]>>1) - (unsigned)block[i+6*8];
+        const unsigned int a6 = (block[i+6*8]>>1) + (unsigned)block[i+2*8];
 
-        const int b0 = a0 + a6;
-        const int b2 = a2 + a4;
-        const int b4 = a2 - a4;
-        const int b6 = a0 - a6;
+        const unsigned int b0 = a0 + a6;
+        const unsigned int b2 = a2 + a4;
+        const unsigned int b4 = a2 - a4;
+        const unsigned int b6 = a0 - a6;
 
-        const int a1 = -block[i+3*8] + block[i+5*8] - block[i+7*8] - (block[i+7*8]>>1);
-        const int a3 =  block[i+1*8] + block[i+7*8] - block[i+3*8] - (block[i+3*8]>>1);
-        const int a5 = -block[i+1*8] + block[i+7*8] + block[i+5*8] + (block[i+5*8]>>1);
-        const int a7 =  block[i+3*8] + block[i+5*8] + block[i+1*8] + (block[i+1*8]>>1);
+        const int a1 = -block[i+3*8] + (unsigned)block[i+5*8] - block[i+7*8] - (block[i+7*8]>>1);
+        const int a3 =  block[i+1*8] + (unsigned)block[i+7*8] - block[i+3*8] - (block[i+3*8]>>1);
+        const int a5 = -block[i+1*8] + (unsigned)block[i+7*8] + block[i+5*8] + (block[i+5*8]>>1);
+        const int a7 =  block[i+3*8] + (unsigned)block[i+5*8] + block[i+1*8] + (block[i+1*8]>>1);
 
-        const int b1 = (a7>>2) + a1;
-        const int b3 =  a3 + (a5>>2);
-        const int b5 = (a3>>2) - a5;
-        const int b7 =  a7 - (a1>>2);
+        const int b1 = (a7>>2) + (unsigned)a1;
+        const int b3 =  (unsigned)a3 + (a5>>2);
+        const int b5 = (a3>>2) - (unsigned)a5;
+        const int b7 =  (unsigned)a7 - (a1>>2);
 
         block[i+0*8] = b0 + b7;
         block[i+7*8] = b0 - b7;
@@ -161,34 +161,34 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
     /* Row pass + add to destination + clip */
     for (i = 0; i < 8; i++) {
-        const int a0 =  block[0+i*8] + block[4+i*8];
-        const int a2 =  block[0+i*8] - block[4+i*8];
-        const int a4 = (block[2+i*8]>>1) - block[6+i*8];
-        const int a6 = (block[6+i*8]>>1) + block[2+i*8];
+        const unsigned a0 =  block[0+i*8] + (unsigned)block[4+i*8];
+        const unsigned a2 =  block[0+i*8] - (unsigned)block[4+i*8];
+        const unsigned a4 = (block[2+i*8]>>1) - (unsigned)block[6+i*8];
+        const unsigned a6 = (block[6+i*8]>>1) + (unsigned)block[2+i*8];
 
-        const int b0 = a0 + a6;
-        const int b2 = a2 + a4;
-        const int b4 = a2 - a4;
-        const int b6 = a0 - a6;
+        const unsigned b0 = a0 + a6;
+        const unsigned b2 = a2 + a4;
+        const unsigned b4 = a2 - a4;
+        const unsigned b6 = a0 - a6;
 
-        const int a1 = -block[3+i*8] + block[5+i*8] - block[7+i*8] - (block[7+i*8]>>1);
-        const int a3 =  block[1+i*8] + block[7+i*8] - block[3+i*8] - (block[3+i*8]>>1);
-        const int a5 = -block[1+i*8] + block[7+i*8] + block[5+i*8] + (block[5+i*8]>>1);
-        const int a7 =  block[3+i*8] + block[5+i*8] + block[1+i*8] + (block[1+i*8]>>1);
+        const int a1 = -(unsigned)block[3+i*8] + block[5+i*8] - block[7+i*8] - (block[7+i*8]>>1);
+        const int a3 =  (unsigned)block[1+i*8] + block[7+i*8] - block[3+i*8] - (block[3+i*8]>>1);
+        const int a5 = -(unsigned)block[1+i*8] + block[7+i*8] + block[5+i*8] + (block[5+i*8]>>1);
+        const int a7 =  (unsigned)block[3+i*8] + block[5+i*8] + block[1+i*8] + (block[1+i*8]>>1);
 
-        const int b1 = (a7>>2) + a1;
-        const int b3 =  a3 + (a5>>2);
-        const int b5 = (a3>>2) - a5;
-        const int b7 =  a7 - (a1>>2);
+        const unsigned b1 = (a7>>2) + (unsigned)a1;
+        const unsigned b3 =  (unsigned)a3 + (a5>>2);
+        const unsigned b5 = (a3>>2) - (unsigned)a5;
+        const unsigned b7 =  (unsigned)a7 - (a1>>2);
 
-        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((b0 + b7) >> 6));
-        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((b2 + b5) >> 6));
-        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((b4 + b3) >> 6));
-        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((b6 + b1) >> 6));
-        dst[i*stride + 4] = clip_uint8(dst[i*stride + 4] + ((b6 - b1) >> 6));
-        dst[i*stride + 5] = clip_uint8(dst[i*stride + 5] + ((b4 - b3) >> 6));
-        dst[i*stride + 6] = clip_uint8(dst[i*stride + 6] + ((b2 - b5) >> 6));
-        dst[i*stride + 7] = clip_uint8(dst[i*stride + 7] + ((b0 - b7) >> 6));
+        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((int)(b0 + b7) >> 6));
+        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((int)(b2 + b5) >> 6));
+        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((int)(b4 + b3) >> 6));
+        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((int)(b6 + b1) >> 6));
+        dst[i*stride + 4] = clip_uint8(dst[i*stride + 4] + ((int)(b6 - b1) >> 6));
+        dst[i*stride + 5] = clip_uint8(dst[i*stride + 5] + ((int)(b4 - b3) >> 6));
+        dst[i*stride + 6] = clip_uint8(dst[i*stride + 6] + ((int)(b2 - b5) >> 6));
+        dst[i*stride + 7] = clip_uint8(dst[i*stride + 7] + ((int)(b0 - b7) >> 6));
     }
 
     memset(block, 0, 64 * sizeof(int16_t));
@@ -200,10 +200,10 @@ void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
     for (i = 0; i < 4; i++) {
-        dst[0] += block[0];
-        dst[1] += block[1];
-        dst[2] += block[2];
-        dst[3] += block[3];
+        dst[0] += (unsigned)block[0];
+        dst[1] += (unsigned)block[1];
+        dst[2] += (unsigned)block[2];
+        dst[3] += (unsigned)block[3];
         dst   += stride;
         block += 4;
     }
@@ -216,14 +216,14 @@ void ff_h264_add_pixels8_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
     for (i = 0; i < 8; i++) {
-        dst[0] += block[0];
-        dst[1] += block[1];
-        dst[2] += block[2];
-        dst[3] += block[3];
-        dst[4] += block[4];
-        dst[5] += block[5];
-        dst[6] += block[6];
-        dst[7] += block[7];
+        dst[0] += (unsigned)block[0];
+        dst[1] += (unsigned)block[1];
+        dst[2] += (unsigned)block[2];
+        dst[3] += (unsigned)block[3];
+        dst[4] += (unsigned)block[4];
+        dst[5] += (unsigned)block[5];
+        dst[6] += (unsigned)block[6];
+        dst[7] += (unsigned)block[7];
         dst   += stride;
         block += 8;
     }
@@ -353,15 +353,15 @@ void ff_h264_luma_dc_dequant_idct_8_mxu(int16_t *output, int16_t *input,
 
     for (i = 0; i < 4; i++) {
         const int offset = x_offset[i];
-        const int z0 = temp[4*0+i] + temp[4*2+i];
-        const int z1 = temp[4*0+i] - temp[4*2+i];
-        const int z2 = temp[4*1+i] - temp[4*3+i];
-        const int z3 = temp[4*1+i] + temp[4*3+i];
+        const unsigned int z0 = temp[4*0+i] + temp[4*2+i];
+        const unsigned int z1 = temp[4*0+i] - temp[4*2+i];
+        const unsigned int z2 = temp[4*1+i] - temp[4*3+i];
+        const unsigned int z3 = temp[4*1+i] + temp[4*3+i];
 
-        output[stride* 0+offset] = ((z0 + z3)*qmul + 128) >> 8;
-        output[stride* 1+offset] = ((z1 + z2)*qmul + 128) >> 8;
-        output[stride* 4+offset] = ((z1 - z2)*qmul + 128) >> 8;
-        output[stride* 5+offset] = ((z0 - z3)*qmul + 128) >> 8;
+        output[stride* 0+offset] = (int)((z0 + z3)*qmul + 128) >> 8;
+        output[stride* 1+offset] = (int)((z1 + z2)*qmul + 128) >> 8;
+        output[stride* 4+offset] = (int)((z1 - z2)*qmul + 128) >> 8;
+        output[stride* 5+offset] = (int)((z0 - z3)*qmul + 128) >> 8;
     }
 #undef stride
 }
