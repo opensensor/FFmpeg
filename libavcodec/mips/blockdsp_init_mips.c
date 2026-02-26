@@ -41,4 +41,9 @@ void ff_blockdsp_init_mips(BlockDSPContext *c)
         c->fill_block_tab[0] = ff_fill_block16_msa;
         c->fill_block_tab[1] = ff_fill_block8_msa;
     }
+
+    if (have_mxu(cpu_flags)) {
+        c->clear_block  = ff_clear_block_mxu;
+        c->clear_blocks = ff_clear_blocks_mxu;
+    }
 }

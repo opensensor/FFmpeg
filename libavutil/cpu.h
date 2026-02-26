@@ -83,6 +83,7 @@
 
 #define AV_CPU_FLAG_MMI          (1 << 0)
 #define AV_CPU_FLAG_MSA          (1 << 1)
+#define AV_CPU_FLAG_MXU          (1 << 2) ///< Ingenic XBurst2 MXUv3 SIMD ASE
 
 //Loongarch SIMD extension.
 #define AV_CPU_FLAG_LSX          (1 << 0)

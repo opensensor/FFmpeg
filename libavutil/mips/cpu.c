@@ -94,6 +94,8 @@ static int cpu_flags_cpuinfo(void)
                 flags |= AV_CPU_FLAG_MMI;
             if (strstr(buf, " msa"))
                 flags |= AV_CPU_FLAG_MSA;
+            if (strstr(buf, " mxuv3"))
+                flags |= AV_CPU_FLAG_MXU;
 
             break;
         }
@@ -119,6 +121,13 @@ int ff_get_cpu_flags_mips(void)
 size_t ff_get_cpu_max_align_mips(void)
 {
     int flags = av_get_cpu_flags();
+
+    /*
+     * MXUv3 VPR registers are 512 bits (64 bytes) wide and the
+     * LA0/SA0 load/store instructions require 64-byte aligned memory.
+     */
+    if (flags & AV_CPU_FLAG_MXU)
+        return 64;
 
     if (flags & AV_CPU_FLAG_MSA)
         return 16;

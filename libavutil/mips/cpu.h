@@ -24,5 +24,6 @@
 
 #define have_mmi(flags) CPUEXT(flags, MMI)
 #define have_msa(flags) CPUEXT(flags, MSA)
+#define have_mxu(flags) CPUEXT(flags, MXU)
 
 #endif /* AVUTIL_MIPS_CPU_H */

@@ -491,6 +491,7 @@ Optimization options (experts only):
   --disable-mipsdspr2      disable MIPS DSP ASE R2 optimizations
   --disable-msa            disable MSA optimizations
   --disable-mipsfpu        disable floating point MIPS optimizations
+  --disable-mxuv3          disable Ingenic XBurst2 MXUv3 SIMD optimizations
   --disable-mmi            disable Loongson MMI optimizations
   --disable-lsx            disable Loongson LSX optimizations
   --disable-lasx           disable Loongson LASX optimizations
@@ -2315,6 +2316,7 @@ ARCH_EXT_LIST_MIPS="
     mipsdsp
     mipsdspr2
     msa
+    mxuv3
 "
 
 ARCH_EXT_LIST_LOONGSON="
@@ -2943,6 +2945,7 @@ mipsfpu_deps="mips"
 mipsdsp_deps="mips"
 mipsdspr2_deps="mips"
 msa_deps="mipsfpu"
+mxuv3_deps="mips"
 
 simd128_deps="wasm"
 
@@ -2985,7 +2988,7 @@ fast_clz_if_any="aarch64 mips ppc x86"
 fast_unaligned_if_any="aarch64 ppc x86"
 simd_align_16_if_any="altivec neon sse"
 simd_align_32_if_any="avx"
-simd_align_64_if_any="avx512"
+simd_align_64_if_any="avx512 mxuv3"
 
 # system capabilities
 linux_perf_deps="linux_perf_event_h"
