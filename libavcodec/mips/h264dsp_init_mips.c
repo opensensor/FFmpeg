@@ -127,4 +127,25 @@ av_cold void ff_h264dsp_init_mips(H264DSPContext *c, const int bit_depth,
             c->luma_dc_dequant_idct = ff_h264_deq_idct_luma_dc_msa;
         }
     }
+
+    if (have_mxu(cpu_flags)) {
+        if (bit_depth == 8) {
+            c->idct_add  = ff_h264_idct_add_8_mxu;
+            c->idct8_add = ff_h264_idct8_add_8_mxu;
+            c->idct_dc_add  = ff_h264_idct_dc_add_8_mxu;
+            c->idct8_dc_add = ff_h264_idct8_dc_add_8_mxu;
+            c->idct_add16      = ff_h264_idct_add16_8_mxu;
+            c->idct_add16intra = ff_h264_idct_add16intra_8_mxu;
+            c->idct8_add4      = ff_h264_idct8_add4_8_mxu;
+
+            if (chroma_format_idc <= 1)
+                c->idct_add8 = ff_h264_idct_add8_8_mxu;
+            else
+                c->idct_add8 = ff_h264_idct_add8_422_8_mxu;
+
+            c->luma_dc_dequant_idct = ff_h264_luma_dc_dequant_idct_8_mxu;
+            c->add_pixels4_clear = ff_h264_add_pixels4_8_mxu;
+            c->add_pixels8_clear = ff_h264_add_pixels8_8_mxu;
+        }
+    }
 }
