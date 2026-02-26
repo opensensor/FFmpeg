@@ -2316,6 +2316,7 @@ ARCH_EXT_LIST_MIPS="
     mipsdsp
     mipsdspr2
     msa
+    mxu
     mxuv3
 "
 
@@ -2945,7 +2946,9 @@ mipsfpu_deps="mips"
 mipsdsp_deps="mips"
 mipsdspr2_deps="mips"
 msa_deps="mipsfpu"
+mxu_deps="mips"
 mxuv3_deps="mips"
+mxuv3_select="mxu"
 
 simd128_deps="wasm"
 
@@ -6669,6 +6672,10 @@ elif enabled mips; then
     if enabled bigendian && enabled msa; then
         disable msa
     fi
+
+    # MXU is enabled via mxuv3_select; no special compiler flags needed
+    # since MXU-flagged code uses standard MIPS32r2 C with word-sized ops
+    enabled mxuv3 && enable mxu
 
 elif enabled parisc; then
 
