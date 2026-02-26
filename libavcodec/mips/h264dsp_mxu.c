@@ -43,7 +43,7 @@
 #include "h264dsp_mips.h"
 
 /* XBurst2 XR (MXU) intrinsics for packed 8-bit/16-bit math */
-#include "../../../thingino-accel/include/mxu.h"
+#include "mxu.h"
 
 /* ---- Branchless uint8 clip ---- */
 

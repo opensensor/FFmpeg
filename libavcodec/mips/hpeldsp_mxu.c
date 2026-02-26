@@ -41,7 +41,7 @@
 #include "hpeldsp_mips.h"
 
 /* XBurst2 XR (MXU) intrinsics for packed 8-bit SIMD */
-#include "../../../thingino-accel/include/mxu.h"
+#include "mxu.h"
 
 /**
  * MXU-accelerated byte-parallel rounding average of 4 packed bytes.
