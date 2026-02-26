@@ -40,4 +40,11 @@ void ff_pixblockdsp_init_mips(PixblockDSPContext *c,
 
         c->get_pixels = high_bit_depth ? ff_get_pixels_16_msa : ff_get_pixels_8_msa;
     }
+
+    if (have_mxu(cpu_flags)) {
+        c->diff_pixels = ff_diff_pixels_mxu;
+
+        if (!high_bit_depth)
+            c->get_pixels = ff_get_pixels_8_mxu;
+    }
 }
