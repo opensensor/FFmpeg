@@ -596,4 +596,37 @@ void ff_h264_luma_dc_dequant_idct_8_mxu(int16_t *output, int16_t *input,
 void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride);
 void ff_h264_add_pixels8_8_mxu(uint8_t *dst, int16_t *block, int stride);
 
+void ff_h264_v_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_luma_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_v_loop_filter_luma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_luma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_luma_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_v_loop_filter_chroma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_chroma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_chroma_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_chroma422_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_h_loop_filter_chroma422_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta, int8_t *tc0);
+void ff_h264_v_loop_filter_chroma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_chroma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_chroma_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_chroma422_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+void ff_h264_h_loop_filter_chroma422_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+        int alpha, int beta);
+
 #endif  // #ifndef AVCODEC_MIPS_H264DSP_MIPS_H

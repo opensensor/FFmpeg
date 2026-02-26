@@ -366,3 +366,263 @@ void ff_h264_luma_dc_dequant_idct_8_mxu(int16_t *output, int16_t *input,
 #undef stride
 }
 
+
+
+/* ================================================================== */
+/* H.264 Deblocking Loop Filter — optimised for MIPS32r2 / XBurst2   */
+/* ================================================================== */
+
+/*
+ * Branchless av_clip replacement: clamp v to [lo, hi].
+ */
+static inline int clip3(int v, int lo, int hi)
+{
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
+/* ---- Luma inter (weak) loop filter ---- */
+
+static av_always_inline void h264_loop_filter_luma_mxu(uint8_t *pix,
+        ptrdiff_t xstride, ptrdiff_t ystride,
+        int inner_iters, int alpha, int beta, int8_t *tc0)
+{
+    int i, d;
+    for (i = 0; i < 4; i++) {
+        const int tc_orig = tc0[i];
+        if (tc_orig < 0) {
+            pix += inner_iters * ystride;
+            continue;
+        }
+        for (d = 0; d < inner_iters; d++) {
+            const int p0 = pix[-1*xstride];
+            const int p1 = pix[-2*xstride];
+            const int p2 = pix[-3*xstride];
+            const int q0 = pix[0];
+            const int q1 = pix[1*xstride];
+            const int q2 = pix[2*xstride];
+
+            if (FFABS(p0 - q0) < alpha &&
+                FFABS(p1 - p0) < beta &&
+                FFABS(q1 - q0) < beta) {
+
+                int tc = tc_orig;
+                int i_delta;
+
+                if (FFABS(p2 - p0) < beta) {
+                    if (tc_orig)
+                        pix[-2*xstride] = p1 + clip3(((p2 + ((p0 + q0 + 1) >> 1)) >> 1) - p1, -tc_orig, tc_orig);
+                    tc++;
+                }
+                if (FFABS(q2 - q0) < beta) {
+                    if (tc_orig)
+                        pix[xstride] = q1 + clip3(((q2 + ((p0 + q0 + 1) >> 1)) >> 1) - q1, -tc_orig, tc_orig);
+                    tc++;
+                }
+
+                i_delta = clip3((((q0 - p0) * 4) + (p1 - q1) + 4) >> 3, -tc, tc);
+                pix[-xstride] = clip_uint8(p0 + i_delta);
+                pix[0]        = clip_uint8(q0 - i_delta);
+            }
+            pix += ystride;
+        }
+    }
+}
+
+void ff_h264_v_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                       int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_luma_mxu(pix, stride, 1, 4, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                       int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_luma_mxu(pix, 1, stride, 4, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_luma_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                              int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_luma_mxu(pix, 1, stride, 2, alpha, beta, tc0);
+}
+
+/* ---- Luma intra (strong) loop filter ---- */
+
+static av_always_inline void h264_loop_filter_luma_intra_mxu(uint8_t *pix,
+        ptrdiff_t xstride, ptrdiff_t ystride,
+        int inner_iters, int alpha, int beta)
+{
+    int d;
+    for (d = 0; d < 4 * inner_iters; d++) {
+        const int p2 = pix[-3*xstride];
+        const int p1 = pix[-2*xstride];
+        const int p0 = pix[-1*xstride];
+        const int q0 = pix[0*xstride];
+        const int q1 = pix[1*xstride];
+        const int q2 = pix[2*xstride];
+
+        if (FFABS(p0 - q0) < alpha &&
+            FFABS(p1 - p0) < beta &&
+            FFABS(q1 - q0) < beta) {
+
+            if (FFABS(p0 - q0) < ((alpha >> 2) + 2)) {
+                if (FFABS(p2 - p0) < beta) {
+                    const int p3 = pix[-4*xstride];
+                    pix[-1*xstride] = (p2 + 2*p1 + 2*p0 + 2*q0 + q1 + 4) >> 3;
+                    pix[-2*xstride] = (p2 + p1 + p0 + q0 + 2) >> 2;
+                    pix[-3*xstride] = (2*p3 + 3*p2 + p1 + p0 + q0 + 4) >> 3;
+                } else {
+                    pix[-1*xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+                }
+                if (FFABS(q2 - q0) < beta) {
+                    const int q3 = pix[3*xstride];
+                    pix[0*xstride] = (p1 + 2*p0 + 2*q0 + 2*q1 + q2 + 4) >> 3;
+                    pix[1*xstride] = (p0 + q0 + q1 + q2 + 2) >> 2;
+                    pix[2*xstride] = (2*q3 + 3*q2 + q1 + q0 + p0 + 4) >> 3;
+                } else {
+                    pix[0*xstride] = (2*q1 + q0 + p1 + 2) >> 2;
+                }
+            } else {
+                pix[-1*xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+                pix[ 0*xstride] = (2*q1 + q0 + p1 + 2) >> 2;
+            }
+        }
+        pix += ystride;
+    }
+}
+
+void ff_h264_v_loop_filter_luma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                              int alpha, int beta)
+{
+    h264_loop_filter_luma_intra_mxu(pix, stride, 1, 4, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_luma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                              int alpha, int beta)
+{
+    h264_loop_filter_luma_intra_mxu(pix, 1, stride, 4, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_luma_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                    int alpha, int beta)
+{
+    h264_loop_filter_luma_intra_mxu(pix, 1, stride, 2, alpha, beta);
+}
+
+/* ---- Chroma inter loop filter ---- */
+
+static av_always_inline void h264_loop_filter_chroma_mxu(uint8_t *pix,
+        ptrdiff_t xstride, ptrdiff_t ystride,
+        int inner_iters, int alpha, int beta, int8_t *tc0)
+{
+    int i, d;
+    for (i = 0; i < 4; i++) {
+        const int tc = (int)((tc0[i] - 1U) + 1);  /* for 8-bit: ((tc0[i] - 1U) << 0) + 1 */
+        if (tc <= 0) {
+            pix += inner_iters * ystride;
+            continue;
+        }
+        for (d = 0; d < inner_iters; d++) {
+            const int p0 = pix[-1*xstride];
+            const int p1 = pix[-2*xstride];
+            const int q0 = pix[0];
+            const int q1 = pix[1*xstride];
+
+            if (FFABS(p0 - q0) < alpha &&
+                FFABS(p1 - p0) < beta &&
+                FFABS(q1 - q0) < beta) {
+
+                int delta = clip3(((q0 - p0) * 4 + (p1 - q1) + 4) >> 3, -(int)tc, (int)tc);
+                pix[-xstride] = clip_uint8(p0 + delta);
+                pix[0]        = clip_uint8(q0 - delta);
+            }
+            pix += ystride;
+        }
+    }
+}
+
+void ff_h264_v_loop_filter_chroma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                          int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_chroma_mxu(pix, stride, 1, 2, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_chroma_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                          int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_chroma_mxu(pix, 1, stride, 2, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_chroma_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_chroma_mxu(pix, 1, stride, 1, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_chroma422_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                             int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_chroma_mxu(pix, 1, stride, 4, alpha, beta, tc0);
+}
+
+void ff_h264_h_loop_filter_chroma422_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                   int alpha, int beta, int8_t *tc0)
+{
+    h264_loop_filter_chroma_mxu(pix, 1, stride, 2, alpha, beta, tc0);
+}
+
+/* ---- Chroma intra loop filter ---- */
+
+static av_always_inline void h264_loop_filter_chroma_intra_mxu(uint8_t *pix,
+        ptrdiff_t xstride, ptrdiff_t ystride,
+        int inner_iters, int alpha, int beta)
+{
+    int d;
+    for (d = 0; d < 4 * inner_iters; d++) {
+        const int p0 = pix[-1*xstride];
+        const int p1 = pix[-2*xstride];
+        const int q0 = pix[0];
+        const int q1 = pix[1*xstride];
+
+        if (FFABS(p0 - q0) < alpha &&
+            FFABS(p1 - p0) < beta &&
+            FFABS(q1 - q0) < beta) {
+
+            pix[-xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+            pix[0]        = (2*q1 + q0 + p1 + 2) >> 2;
+        }
+        pix += ystride;
+    }
+}
+
+void ff_h264_v_loop_filter_chroma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                int alpha, int beta)
+{
+    h264_loop_filter_chroma_intra_mxu(pix, stride, 1, 2, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_chroma_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                int alpha, int beta)
+{
+    h264_loop_filter_chroma_intra_mxu(pix, 1, stride, 2, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_chroma_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                      int alpha, int beta)
+{
+    h264_loop_filter_chroma_intra_mxu(pix, 1, stride, 1, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_chroma422_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                   int alpha, int beta)
+{
+    h264_loop_filter_chroma_intra_mxu(pix, 1, stride, 4, alpha, beta);
+}
+
+void ff_h264_h_loop_filter_chroma422_mbaff_intra_8_mxu(uint8_t *pix, ptrdiff_t stride,
+                                                         int alpha, int beta)
+{
+    h264_loop_filter_chroma_intra_mxu(pix, 1, stride, 2, alpha, beta);
+}
