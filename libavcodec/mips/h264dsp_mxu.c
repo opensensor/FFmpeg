@@ -20,20 +20,30 @@
 
 /**
  * @file
- * Ingenic XBurst2 MIPS32r2 optimised H.264 IDCT and pixel functions.
+ * Ingenic XBurst2 MXU SIMD optimised H.264 IDCT and pixel functions.
  *
  * Optimisations over -Os compiled C:
- *  - Branchless uint8 clamping with conditional moves
+ *  - MXU Q8ADD_AA/Q8ADD_SS for saturating pixel add/sub (4 bytes at once)
  *  - Word-sized loads/stores for processing 4 pixels at a time
  *  - Hand-unrolled loops to avoid loop overhead
  *  - DC-only shortcuts for the most common IDCT case
+ *
+ * MXU instruction usage:
+ *  - S32I2M: move GPR → XR register
+ *  - S32M2I: move XR register → GPR
+ *  - Q8ADD_AA: saturating unsigned byte add (4 lanes, clamps to 255)
+ *  - Q8ADD_SS: saturating unsigned byte sub (4 lanes, clamps to 0)
  */
 
 #include <string.h>
+#include <stdint.h>
 #include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
 #include "libavcodec/h264dec.h"
 #include "h264dsp_mips.h"
+
+/* XBurst2 XR (MXU) intrinsics for packed 8-bit/16-bit math */
+#include "../../../thingino-accel/include/mxu.h"
 
 /* ---- Branchless uint8 clip ---- */
 
@@ -44,24 +54,60 @@ static inline uint8_t clip_uint8(int v)
     return v;
 }
 
-/* ---- DC-only 4x4 IDCT add (most common case) ---- */
+/* ---- MXU-accelerated DC-only 4x4 IDCT add (most common case) ---- */
 
+/**
+ * DC-only 4x4 IDCT add using MXU packed byte saturating arithmetic.
+ *
+ * Instead of 16 individual clip_uint8(dst[i] + dc) calls (each with a
+ * branch), we process 4 pixels per iteration using Q8ADD_AA (saturating
+ * add) or Q8ADD_SS (saturating subtract):
+ *
+ *   Q8ADD_AA: xra[i] = min(xrb[i] + xrc[i], 255) for 4 byte lanes
+ *   Q8ADD_SS: xra[i] = max(xrb[i] - xrc[i], 0)   for 4 byte lanes
+ *
+ * This handles uint8 clamping automatically in hardware.
+ */
 void ff_h264_idct_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
     int dc = (block[0] + 32) >> 6;
     block[0] = 0;
 
-    for (i = 0; i < 4; i++) {
-        dst[0] = clip_uint8(dst[0] + dc);
-        dst[1] = clip_uint8(dst[1] + dc);
-        dst[2] = clip_uint8(dst[2] + dc);
-        dst[3] = clip_uint8(dst[3] + dc);
-        dst += stride;
+    if (dc == 0)
+        return;
+
+    if (dc > 0) {
+        /* Clamp dc to byte range for Q8ADD_AA */
+        uint32_t dcb = (dc > 255) ? 255 : (uint32_t)dc;
+        /* Splat dc byte into all 4 lanes */
+        dcb |= dcb << 8;
+        dcb |= dcb << 16;
+        S32I2M(xr2, dcb);
+
+        for (i = 0; i < 4; i++) {
+            S32I2M(xr1, AV_RN32(dst));
+            Q8ADD_AA(xr1, xr1, xr2);
+            AV_WN32(dst, (uint32_t)S32M2I(xr1));
+            dst += stride;
+        }
+    } else {
+        /* dc < 0: subtract |dc| with saturation to 0 */
+        uint32_t dcb = (-dc > 255) ? 255 : (uint32_t)(-dc);
+        dcb |= dcb << 8;
+        dcb |= dcb << 16;
+        S32I2M(xr2, dcb);
+
+        for (i = 0; i < 4; i++) {
+            S32I2M(xr1, AV_RN32(dst));
+            Q8ADD_SS(xr1, xr1, xr2);
+            AV_WN32(dst, (uint32_t)S32M2I(xr1));
+            dst += stride;
+        }
     }
 }
 
-/* ---- DC-only 8x8 IDCT add ---- */
+/* ---- MXU-accelerated DC-only 8x8 IDCT add ---- */
 
 void ff_h264_idct8_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
@@ -69,16 +115,44 @@ void ff_h264_idct8_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     int dc = (block[0] + 32) >> 6;
     block[0] = 0;
 
-    for (i = 0; i < 8; i++) {
-        dst[0] = clip_uint8(dst[0] + dc);
-        dst[1] = clip_uint8(dst[1] + dc);
-        dst[2] = clip_uint8(dst[2] + dc);
-        dst[3] = clip_uint8(dst[3] + dc);
-        dst[4] = clip_uint8(dst[4] + dc);
-        dst[5] = clip_uint8(dst[5] + dc);
-        dst[6] = clip_uint8(dst[6] + dc);
-        dst[7] = clip_uint8(dst[7] + dc);
-        dst += stride;
+    if (dc == 0)
+        return;
+
+    if (dc > 0) {
+        uint32_t dcb = (dc > 255) ? 255 : (uint32_t)dc;
+        dcb |= dcb << 8;
+        dcb |= dcb << 16;
+        S32I2M(xr2, dcb);
+
+        for (i = 0; i < 8; i++) {
+            /* Process 8 pixels per row: two 4-byte groups */
+            S32I2M(xr1, AV_RN32(dst));
+            Q8ADD_AA(xr1, xr1, xr2);
+            AV_WN32(dst, (uint32_t)S32M2I(xr1));
+
+            S32I2M(xr3, AV_RN32(dst + 4));
+            Q8ADD_AA(xr3, xr3, xr2);
+            AV_WN32(dst + 4, (uint32_t)S32M2I(xr3));
+
+            dst += stride;
+        }
+    } else {
+        uint32_t dcb = (-dc > 255) ? 255 : (uint32_t)(-dc);
+        dcb |= dcb << 8;
+        dcb |= dcb << 16;
+        S32I2M(xr2, dcb);
+
+        for (i = 0; i < 8; i++) {
+            S32I2M(xr1, AV_RN32(dst));
+            Q8ADD_SS(xr1, xr1, xr2);
+            AV_WN32(dst, (uint32_t)S32M2I(xr1));
+
+            S32I2M(xr3, AV_RN32(dst + 4));
+            Q8ADD_SS(xr3, xr3, xr2);
+            AV_WN32(dst + 4, (uint32_t)S32M2I(xr3));
+
+            dst += stride;
+        }
     }
 }
 
@@ -430,6 +504,137 @@ static av_always_inline void h264_loop_filter_luma_mxu(uint8_t *pix,
     }
 }
 
+/*
+ * Horizontal luma inter loop filter (xstride == 1) accelerated with XR MXU.
+ *
+ * For each edge we process "inner_iters" rows. On each row the relevant
+ * pixels are laid out as:
+ *   p2 p1 p0 | q0 q1 q2
+ * and are byte-contiguous in memory, which maps naturally onto the 4-byte
+ * XR registers:
+ *   S32LDD(xr0, row-3) → [p2, p1, p0, q0]
+ *   S32LDD(xr1, row-2) → [p1, p0, q0, q1]
+ *   S32LDD(xr2, row-1) → [p0, q0, q1, q2]
+ *
+ * Two Q8ABD operations then give us the absolute differences needed for the
+ * H.264 conditions:
+ *   diffA = |xr0 - xr1| → [|p2-p1|, |p1-p0|, |p0-q0|, |q0-q1|]
+ *   diffB = |xr0 - xr2| → [|p2-p0|,  ... ,  ... , |q0-q2|]
+ *
+ * We still perform the scalar arithmetic for tc/i_delta exactly as in the
+ * scalar helper but use S32LDD/Q8ABD/S32M2I/S32I2M/S32STD to load,
+ * compute abs-diffs and store 4 pixels at a time.
+ */
+static av_always_inline void h264_loop_filter_luma_h_xr_mxu(uint8_t *pix,
+        ptrdiff_t stride, int inner_iters,
+        int alpha, int beta, int8_t *tc0)
+{
+    int i, d;
+
+    for (i = 0; i < 4; i++) {
+        const int tc_orig = tc0[i];
+
+        if (tc_orig < 0) {
+            pix += inner_iters * stride;
+            continue;
+        }
+
+        for (d = 0; d < inner_iters; d++) {
+            uint8_t *row = pix;
+            intptr_t base_m3 = (intptr_t)(row - 3); /* p2 */
+            intptr_t base_m2 = (intptr_t)(row - 2); /* p1 */
+            intptr_t base_m1 = (intptr_t)(row - 1); /* p0 */
+
+            /* Load p2..q2 into XR registers (4 bytes each) */
+            S32LDD(xr0, base_m3, 0); /* [p2, p1, p0, q0] */
+            S32LDD(xr1, base_m2, 0); /* [p1, p0, q0, q1] */
+            S32LDD(xr2, base_m1, 0); /* [p0, q0, q1, q2] */
+
+            /* Preserve packed pixel words */
+            uint32_t pack0 = (uint32_t) S32M2I(xr0);
+            uint32_t pack1 = (uint32_t) S32M2I(xr1);
+            uint32_t pack2 = (uint32_t) S32M2I(xr2);
+
+            /* Vector absolute differences for filter conditions */
+            Q8ABD(xr3, xr0, xr1);
+            Q8ABD(xr4, xr0, xr2);
+
+            uint32_t diffA = (uint32_t) S32M2I(xr3);
+            uint32_t diffB = (uint32_t) S32M2I(xr4);
+
+            /* Byte lanes are in increasing address order in the 32-bit word. */
+            int p2 =  pack0        & 0xFF;
+            int p1 = (pack0 >>  8) & 0xFF;
+            int p0 = (pack0 >> 16) & 0xFF;
+            int q0 = (pack0 >> 24) & 0xFF;
+            int q1 = (pack1 >> 24) & 0xFF;
+            int q2 = (pack2 >> 24) & 0xFF;
+
+            int abs_p1_p0 = (diffA >>  8) & 0xFF;
+            int abs_p0_q0 = (diffA >> 16) & 0xFF;
+            int abs_q1_q0 = (diffA >> 24) & 0xFF;
+            int abs_p2_p0 =  diffB        & 0xFF;
+            int abs_q2_q0 = (diffB >> 24) & 0xFF;
+
+            if (abs_p0_q0 < alpha &&
+                abs_p1_p0 < beta &&
+                abs_q1_q0 < beta) {
+
+                int tc = tc_orig;
+                int p1_old = p1;
+                int q1_old = q1;
+                int p1_new = p1;
+                int q1_new = q1;
+
+                if (abs_p2_p0 < beta) {
+                    if (tc_orig) {
+                        int avg_p0q0 = (p0 + q0 + 1) >> 1;
+                        int tmp      = (p2 + avg_p0q0) >> 1;
+                        int delta1   = clip3(tmp - p1_old, -tc_orig, tc_orig);
+                        p1_new       = p1_old + delta1;
+                    }
+                    tc++;
+                }
+
+                if (abs_q2_q0 < beta) {
+                    if (tc_orig) {
+                        int avg_p0q0 = (p0 + q0 + 1) >> 1;
+                        int tmp      = (q2 + avg_p0q0) >> 1;
+                        int delta2   = clip3(tmp - q1_old, -tc_orig, tc_orig);
+                        q1_new       = q1_old + delta2;
+                    }
+                    tc++;
+                }
+
+                /* Main delta and p0/q0 update as in scalar implementation */
+                {
+                    int i_delta = clip3((((q0 - p0) * 4) + (p1_old - q1_old) + 4) >> 3,
+                                        -tc, tc);
+                    int p0_new = clip_uint8(p0 + i_delta);
+                    int q0_new = clip_uint8(q0 - i_delta);
+
+                    /* Re-pack updated p2..q0 and p1..q1 and store via XR */
+                    uint32_t pack0_new = (pack0 & 0x000000FFu) |
+                                         ((uint32_t)p1_new << 8) |
+                                         ((uint32_t)p0_new << 16) |
+                                         ((uint32_t)q0_new << 24);
+                    uint32_t pack1_new = ((uint32_t)p1_new << 0) |
+                                         ((uint32_t)p0_new << 8) |
+                                         ((uint32_t)q0_new << 16) |
+                                         ((uint32_t)q1_new << 24);
+
+                    S32I2M(xr5, pack0_new);
+                    S32I2M(xr6, pack1_new);
+                    S32STD(xr5, base_m3, 0);
+                    S32STD(xr6, base_m2, 0);
+                }
+            }
+
+            pix += stride;
+        }
+    }
+}
+
 void ff_h264_v_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
                                        int alpha, int beta, int8_t *tc0)
 {
@@ -439,13 +644,13 @@ void ff_h264_v_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
 void ff_h264_h_loop_filter_luma_8_mxu(uint8_t *pix, ptrdiff_t stride,
                                        int alpha, int beta, int8_t *tc0)
 {
-    h264_loop_filter_luma_mxu(pix, 1, stride, 4, alpha, beta, tc0);
+    h264_loop_filter_luma_h_xr_mxu(pix, stride, 4, alpha, beta, tc0);
 }
 
 void ff_h264_h_loop_filter_luma_mbaff_8_mxu(uint8_t *pix, ptrdiff_t stride,
                                               int alpha, int beta, int8_t *tc0)
 {
-    h264_loop_filter_luma_mxu(pix, 1, stride, 2, alpha, beta, tc0);
+    h264_loop_filter_luma_h_xr_mxu(pix, stride, 2, alpha, beta, tc0);
 }
 
 /* ---- Luma intra (strong) loop filter ---- */
