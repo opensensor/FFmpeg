@@ -17,14 +17,40 @@
 
 #include "h264dsp_mips.h"
 
-#include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
+
+#include "mxu.h"
+
+static inline uint8_t clip_uint8(int v)
+{
+    /* Branchless clamp to [0,255]. Works for v in a reasonable int range. */
+    if (v & ~0xFF)
+        return (-v) >> 31;
+    return v;
+}
 
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
 {
-    const uint32_t xor = a ^ b;
+#if HAVE_INLINE_ASM
+    /* Q8AVGR: per-byte (a + b + 1) >> 1, no cross-byte carry. */
+    S32I2M(xr1, a);
+    S32I2M(xr2, b);
+    Q8AVGR(xr0, xr1, xr2);
+    return S32M2I(xr0);
+#else
     /* Rounded per-byte average: (a + b + 1) >> 1, without cross-byte carries. */
+    const uint32_t xor = a ^ b;
     return (a & b) + ((xor & 0xFEFEFEFEU) >> 1) + (xor & 0x01010101U);
+#endif
+}
+
+static inline uint32_t pack_u8x4(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)
+{
+#if HAVE_BIGENDIAN
+    return ((uint32_t)b0 << 24) | ((uint32_t)b1 << 16) | ((uint32_t)b2 << 8) | (uint32_t)b3;
+#else
+    return (uint32_t)b0 | ((uint32_t)b1 << 8) | ((uint32_t)b2 << 16) | ((uint32_t)b3 << 24);
+#endif
 }
 
 static inline void put_block_w4(uint8_t *dst, const uint8_t *src,
@@ -109,38 +135,60 @@ static inline void avg_block_w16(uint8_t *dst, const uint8_t *src,
     }
 }
 
-static inline int qpel_6tap_u8(const uint8_t *p)
+static inline int qpel_6tap_vals(int p0, int p1, int p2, int p3, int p4, int p5)
 {
-    /* 6-tap H.264 luma filter: [ 1, -5, 20, 20, -5, 1 ] */
-    return p[0] + p[5] - 5 * (p[1] + p[4]) + 20 * (p[2] + p[3]);
+    /*
+     * v = p0 + p5 - 5*(p1+p4) + 20*(p2+p3)
+     * Use shifts/adds so -Os doesn't choose slower integer mul on XBurst2.
+     */
+    const int s05 = p0 + p5;
+    const int s14 = p1 + p4;
+    const int s23 = p2 + p3;
+    return s05 - ((s14 << 2) + s14) + ((s23 << 4) + (s23 << 2));
 }
 
 static inline uint8_t qpel_clip_shift5(int v)
 {
-    return av_clip_uint8((v + 16) >> 5);
+    return clip_uint8((v + 16) >> 5);
 }
 
 static inline uint8_t qpel_clip_shift10(int v)
 {
-    return av_clip_uint8((v + 512) >> 10);
+    return clip_uint8((v + 512) >> 10);
 }
 
 static inline void qpel_h_lowpass(uint8_t *dst, const uint8_t *src,
                                   ptrdiff_t stride, int w, int h,
                                   int do_avg)
 {
+    /* Sliding-window horizontal 6-tap: reduces loads from 6/pixel to ~1/pixel. */
     for (int y = 0; y < h; y++) {
         const uint8_t *s = src + y * stride - 2;
-        if (!do_avg) {
-            for (int x = 0; x < w; x++) {
-                const int v = qpel_6tap_u8(s + x);
-                dst[x] = qpel_clip_shift5(v);
-            }
-        } else {
-            for (int x = 0; x < w; x++) {
-                const int v = qpel_6tap_u8(s + x);
-                const uint8_t p = qpel_clip_shift5(v);
-                dst[x] = (dst[x] + p + 1) >> 1;
+        int p0 = s[0], p1 = s[1], p2 = s[2], p3 = s[3], p4 = s[4], p5 = s[5];
+
+        for (int x = 0; x < w; x += 4) {
+            uint8_t o0, o1, o2, o3;
+
+            o0 = qpel_clip_shift5(qpel_6tap_vals(p0, p1, p2, p3, p4, p5));
+            p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5; p5 = s[x + 6];
+
+            o1 = qpel_clip_shift5(qpel_6tap_vals(p0, p1, p2, p3, p4, p5));
+            p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5; p5 = s[x + 7];
+
+            o2 = qpel_clip_shift5(qpel_6tap_vals(p0, p1, p2, p3, p4, p5));
+            p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5; p5 = s[x + 8];
+
+            o3 = qpel_clip_shift5(qpel_6tap_vals(p0, p1, p2, p3, p4, p5));
+            p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5;
+            if (x + 4 < w)
+                p5 = s[x + 9];
+
+            const uint32_t pred = pack_u8x4(o0, o1, o2, o3);
+            if (!do_avg) {
+                AV_WN32(dst + x, pred);
+            } else {
+                const uint32_t d = AV_RN32(dst + x);
+                AV_WN32(dst + x, rnd_avg32(d, pred));
             }
         }
         dst += stride;
@@ -151,27 +199,47 @@ static inline void qpel_v_lowpass(uint8_t *dst, const uint8_t *src,
                                   ptrdiff_t stride, int w, int h,
                                   int do_avg)
 {
-    for (int y = 0; y < h; y++) {
-        const uint8_t *s0 = src + (y - 2) * stride;
-        const uint8_t *s1 = s0 + stride;
-        const uint8_t *s2 = s1 + stride;
-        const uint8_t *s3 = s2 + stride;
-        const uint8_t *s4 = s3 + stride;
-        const uint8_t *s5 = s4 + stride;
+    /* Keep a 6-row sliding window of source bytes, rotated by pointer swap. */
+    uint8_t rows_mem[6][16];
+    uint8_t *r0 = rows_mem[0];
+    uint8_t *r1 = rows_mem[1];
+    uint8_t *r2 = rows_mem[2];
+    uint8_t *r3 = rows_mem[3];
+    uint8_t *r4 = rows_mem[4];
+    uint8_t *r5 = rows_mem[5];
 
-        if (!do_avg) {
-            for (int x = 0; x < w; x++) {
-                const int v = s0[x] + s5[x] - 5 * (s1[x] + s4[x]) + 20 * (s2[x] + s3[x]);
-                dst[x] = qpel_clip_shift5(v);
-            }
-        } else {
-            for (int x = 0; x < w; x++) {
-                const int v = s0[x] + s5[x] - 5 * (s1[x] + s4[x]) + 20 * (s2[x] + s3[x]);
-                const uint8_t p = qpel_clip_shift5(v);
-                dst[x] = (dst[x] + p + 1) >> 1;
+    for (int r = 0; r < 6; r++) {
+        const uint8_t *s = src + (r - 2) * stride;
+        for (int x = 0; x < w; x += 4)
+            AV_WN32(rows_mem[r] + x, AV_RN32(s + x));
+    }
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x += 4) {
+            const uint8_t o0 = qpel_clip_shift5(qpel_6tap_vals(r0[x + 0], r1[x + 0], r2[x + 0], r3[x + 0], r4[x + 0], r5[x + 0]));
+            const uint8_t o1 = qpel_clip_shift5(qpel_6tap_vals(r0[x + 1], r1[x + 1], r2[x + 1], r3[x + 1], r4[x + 1], r5[x + 1]));
+            const uint8_t o2 = qpel_clip_shift5(qpel_6tap_vals(r0[x + 2], r1[x + 2], r2[x + 2], r3[x + 2], r4[x + 2], r5[x + 2]));
+            const uint8_t o3 = qpel_clip_shift5(qpel_6tap_vals(r0[x + 3], r1[x + 3], r2[x + 3], r3[x + 3], r4[x + 3], r5[x + 3]));
+            const uint32_t pred = pack_u8x4(o0, o1, o2, o3);
+
+            if (!do_avg) {
+                AV_WN32(dst + x, pred);
+            } else {
+                const uint32_t d = AV_RN32(dst + x);
+                AV_WN32(dst + x, rnd_avg32(d, pred));
             }
         }
         dst += stride;
+
+        /* Slide window down by one row and refill the newest (y+4). */
+        if (y + 1 < h) {
+            uint8_t *tmp = r0;
+            r0 = r1; r1 = r2; r2 = r3; r3 = r4; r4 = r5; r5 = tmp;
+
+            const uint8_t *sn = src + (y + 4) * stride;
+            for (int x = 0; x < w; x += 4)
+                AV_WN32(r5 + x, AV_RN32(sn + x));
+        }
     }
 }
 
@@ -180,46 +248,56 @@ static inline void qpel_hv_lowpass(uint8_t *dst, const uint8_t *src,
                                    int do_avg)
 {
     /* Ring buffer of 6 horizontally-filtered rows (int16 intermediate). */
-    int16_t hbuf[6][16];
+    int16_t hmem[6][16];
+    int16_t *r0 = hmem[0];
+    int16_t *r1 = hmem[1];
+    int16_t *r2 = hmem[2];
+    int16_t *r3 = hmem[3];
+    int16_t *r4 = hmem[4];
+    int16_t *r5 = hmem[5];
 
+    /* Horizontal stage (sliding window) into the 6-row buffer. */
     for (int r = 0; r < 6; r++) {
         const uint8_t *s = src + (r - 2) * stride - 2;
-        for (int x = 0; x < w; x++)
-            hbuf[r][x] = qpel_6tap_u8(s + x);
+        int p0 = s[0], p1 = s[1], p2 = s[2], p3 = s[3], p4 = s[4], p5 = s[5];
+        for (int x = 0; x < w; x++) {
+            hmem[r][x] = (int16_t)qpel_6tap_vals(p0, p1, p2, p3, p4, p5);
+            p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5;
+            if (x + 1 < w)
+                p5 = s[x + 6];
+        }
     }
 
     for (int y = 0; y < h; y++) {
-        const int i0 = (y + 0) % 6;
-        const int i1 = (y + 1) % 6;
-        const int i2 = (y + 2) % 6;
-        const int i3 = (y + 3) % 6;
-        const int i4 = (y + 4) % 6;
-        const int i5 = (y + 5) % 6;
+        for (int x = 0; x < w; x += 4) {
+            const uint8_t o0 = qpel_clip_shift10(qpel_6tap_vals(r0[x + 0], r1[x + 0], r2[x + 0], r3[x + 0], r4[x + 0], r5[x + 0]));
+            const uint8_t o1 = qpel_clip_shift10(qpel_6tap_vals(r0[x + 1], r1[x + 1], r2[x + 1], r3[x + 1], r4[x + 1], r5[x + 1]));
+            const uint8_t o2 = qpel_clip_shift10(qpel_6tap_vals(r0[x + 2], r1[x + 2], r2[x + 2], r3[x + 2], r4[x + 2], r5[x + 2]));
+            const uint8_t o3 = qpel_clip_shift10(qpel_6tap_vals(r0[x + 3], r1[x + 3], r2[x + 3], r3[x + 3], r4[x + 3], r5[x + 3]));
+            const uint32_t pred = pack_u8x4(o0, o1, o2, o3);
 
-        if (!do_avg) {
-            for (int x = 0; x < w; x++) {
-                const int v = hbuf[i0][x] + hbuf[i5][x]
-                            - 5 * (hbuf[i1][x] + hbuf[i4][x])
-                            + 20 * (hbuf[i2][x] + hbuf[i3][x]);
-                dst[x] = qpel_clip_shift10(v);
-            }
-        } else {
-            for (int x = 0; x < w; x++) {
-                const int v = hbuf[i0][x] + hbuf[i5][x]
-                            - 5 * (hbuf[i1][x] + hbuf[i4][x])
-                            + 20 * (hbuf[i2][x] + hbuf[i3][x]);
-                const uint8_t p = qpel_clip_shift10(v);
-                dst[x] = (dst[x] + p + 1) >> 1;
+            if (!do_avg) {
+                AV_WN32(dst + x, pred);
+            } else {
+                const uint32_t d = AV_RN32(dst + x);
+                AV_WN32(dst + x, rnd_avg32(d, pred));
             }
         }
         dst += stride;
 
-        /* Compute next horizontal intermediate row (source row y+4) into slot y%6.
-         * Not needed after the last output row. */
+        /* Slide vertical window and compute the next horizontal row (y+4). */
         if (y + 1 < h) {
+            int16_t *tmp = r0;
+            r0 = r1; r1 = r2; r2 = r3; r3 = r4; r4 = r5; r5 = tmp;
+
             const uint8_t *sn = src + (y + 4) * stride - 2;
-            for (int x = 0; x < w; x++)
-                hbuf[y % 6][x] = qpel_6tap_u8(sn + x);
+            int p0 = sn[0], p1 = sn[1], p2 = sn[2], p3 = sn[3], p4 = sn[4], p5 = sn[5];
+            for (int x = 0; x < w; x++) {
+                r5[x] = (int16_t)qpel_6tap_vals(p0, p1, p2, p3, p4, p5);
+                p0 = p1; p1 = p2; p2 = p3; p3 = p4; p4 = p5;
+                if (x + 1 < w)
+                    p5 = sn[x + 6];
+            }
         }
     }
 }
