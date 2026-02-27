@@ -49,22 +49,7 @@
 #include <string.h>
 #include "libavutil/intreadwrite.h"
 #include "blockdsp_mips.h"
-
-/*
- * SA0_VPR0_AT(ptr) — store all 64 bytes of VPR0 to the given address.
- * $t0 must hold ptr; two SA0 instructions write the low and high halves.
- */
-#define SA0_VPR0_AT(ptr) do {                                   \
-    register void *_base __asm__("t0") = (void *)(ptr);         \
-    __asm__ __volatile__(                                        \
-        ".set push\n\t"                                          \
-        ".set noreorder\n\t"                                     \
-        ".word 0x710000d5\n\t"  /* SA0 VPR0 low  → t0+0  */    \
-        ".word 0x710102d5\n\t"  /* SA0 VPR0 high → t0+32 */    \
-        ".set pop\n\t"                                           \
-        :: "r"(_base) : "memory"                                 \
-    );                                                           \
-} while (0)
+#include "mxu.h"
 
 /**
  * Zero a single 64-element int16_t DCT coefficient block (128 bytes).
@@ -80,8 +65,7 @@ void ff_clear_block_mxu(int16_t *block)
         return;
     }
 
-    /* VPR0 = 0 */
-    __asm__ __volatile__(".word 0x4a80000b\n\tsync\n" ::: "memory");
+    VPR_ZERO_INIT();
 
     SA0_VPR0_AT(block);              /* bytes   0-63  */
     SA0_VPR0_AT((int8_t *)block + 64); /* bytes  64-127 */
@@ -101,8 +85,7 @@ void ff_clear_blocks_mxu(int16_t *block)
         return;
     }
 
-    /* VPR0 = 0 — only needed once for all 12 stores below */
-    __asm__ __volatile__(".word 0x4a80000b\n\tsync\n" ::: "memory");
+    VPR_ZERO_INIT();
 
     int8_t *b = (int8_t *)block;
 
@@ -114,6 +97,4 @@ void ff_clear_blocks_mxu(int16_t *block)
     SA0_VPR0_AT(b + 512);  SA0_VPR0_AT(b + 576);
     SA0_VPR0_AT(b + 640);  SA0_VPR0_AT(b + 704);
 }
-
-#undef SA0_VPR0_AT
 

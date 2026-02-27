@@ -152,6 +152,60 @@
         0x70100007 | ((xra) << 6) | ((xrb) << 10) | ((xrc) << 14)))
 
 /* ------------------------------------------------------------------ */
+/*  Software prefetch (MIPS PREF instruction)                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * PREF hint=0 → prefetch for load
+ * PREF hint=1 → prefetch for store (prepare cache line for writing)
+ *
+ * On the in-order XBurst2 core, issuing PREF one or two loop iterations
+ * ahead hides the memory-access latency that would otherwise stall the
+ * pipeline.  The cost of a PREF to an already-cached line is negligible.
+ */
+#define PREF_LOAD(base, off) \
+    __asm__ __volatile__("pref 0, %0" :: "m"(*((const uint8_t *)(base) + (off))))
+
+#define PREF_STORE(base, off) \
+    __asm__ __volatile__("pref 1, %0" :: "m"(*((uint8_t *)(base) + (off))))
+
+/* ------------------------------------------------------------------ */
+/*  SA0 VPR0 zero store (512-bit / 64 bytes per pair)                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * SA0_VPR0_AT(ptr) — store all 64 bytes of VPR0 (which must already
+ * be zeroed) to the given 64-byte-aligned address.  Two SA0 ops write
+ * the low and high 256-bit halves.
+ *
+ * Shared between blockdsp_mxu.c and h264dsp_mxu.c so that the
+ * zero-store pattern is consistent everywhere.
+ */
+#define SA0_VPR0_AT(ptr) do {                                   \
+    register void *_base __asm__("t0") = (void *)(ptr);         \
+    __asm__ __volatile__(                                        \
+        ".set push\n\t"                                          \
+        ".set noreorder\n\t"                                     \
+        ".word 0x710000d5\n\t"  /* SA0 VPR0 low  -> t0+0  */   \
+        ".word 0x710102d5\n\t"  /* SA0 VPR0 high -> t0+32 */   \
+        ".set pop\n\t"                                           \
+        :: "r"(_base) : "memory"                                 \
+    );                                                           \
+} while (0)
+
+/*
+ * VPR_ZERO_BLOCK_32(ptr) — zero 32 bytes (4x4 int16_t block) using VPR0.
+ * Falls back to memset if not 64-byte aligned.  For 32-byte blocks that
+ * are 64-byte aligned, only the low half of SA0 is needed.
+ */
+
+/*
+ * VPR_ZERO_INIT() — zero VPR0 once; call before SA0 stores.
+ */
+#define VPR_ZERO_INIT() \
+    __asm__ __volatile__(".word 0x4a80000b\n\tsync\n" ::: "memory")
+
+/* ------------------------------------------------------------------ */
 /*  CU2 (Coprocessor 2) lazy enablement for XBurst2 MXUv3             */
 /* ------------------------------------------------------------------ */
 

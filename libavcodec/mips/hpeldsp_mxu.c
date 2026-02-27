@@ -33,6 +33,7 @@
 
 #include "libavutil/intreadwrite.h"
 #include "hpeldsp_mips.h"
+#include "mxu.h"
 
 /**
  * Byte-parallel rounding average of 4 packed bytes.
@@ -59,6 +60,8 @@ void ff_put_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);       /* prefetch next src row */
+        PREF_STORE(block, line_size);       /* prefetch next dst row */
         AV_WN32A(block,      AV_RN32(pixels));
         AV_WN32A(block + 4,  AV_RN32(pixels + 4));
         AV_WN32A(block + 8,  AV_RN32(pixels + 8));
@@ -73,6 +76,7 @@ void ff_put_pixels8_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);
         AV_WN32A(block,     AV_RN32(pixels));
         AV_WN32A(block + 4, AV_RN32(pixels + 4));
         block  += line_size;
@@ -98,6 +102,8 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);
+        PREF_LOAD(block, line_size);
         AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32(pixels)));
         AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32(pixels + 4)));
         AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32(pixels + 8)));
@@ -112,6 +118,8 @@ void ff_avg_pixels8_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);
+        PREF_LOAD(block, line_size);
         AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     AV_RN32(pixels)));
         AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), AV_RN32(pixels + 4)));
         block  += line_size;
@@ -137,6 +145,7 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);
         uint32_t a0 = AV_RN32(pixels),      b0 = AV_RN32(pixels + 1);
         uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
         uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
@@ -155,6 +164,7 @@ void ff_put_pixels8_x2_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     for (i = 0; i < h; i++) {
+        PREF_LOAD(pixels, line_size);
         AV_WN32A(block,     rnd_avg32(AV_RN32(pixels),     AV_RN32(pixels + 1)));
         AV_WN32A(block + 4, rnd_avg32(AV_RN32(pixels + 4), AV_RN32(pixels + 5)));
         block  += line_size;
@@ -181,6 +191,7 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
     int i;
     for (i = 0; i < h; i++) {
         const uint8_t *p1 = pixels + line_size;
+        PREF_LOAD(p1, line_size);  /* prefetch row after next */
         AV_WN32A(block,      rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
         AV_WN32A(block + 4,  rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
         AV_WN32A(block + 8,  rnd_avg32(AV_RN32(pixels + 8),  AV_RN32(p1 + 8)));
@@ -196,6 +207,7 @@ void ff_put_pixels8_y2_mxu(uint8_t *block, const uint8_t *pixels,
     int i;
     for (i = 0; i < h; i++) {
         const uint8_t *p1 = pixels + line_size;
+        PREF_LOAD(p1, line_size);
         AV_WN32A(block,     rnd_avg32(AV_RN32(pixels),     AV_RN32(p1)));
         AV_WN32A(block + 4, rnd_avg32(AV_RN32(pixels + 4), AV_RN32(p1 + 4)));
         block  += line_size;
