@@ -129,10 +129,17 @@ size_t ff_get_cpu_max_align_mips(void)
     int flags = av_get_cpu_flags();
 
     /*
-     * MXU-flagged code is currently pure scalar MIPS32r2, so no
-     * special alignment is needed beyond the default.  When real
-     * MXUv3 VPR (512-bit) instructions are added, bump this to 64.
+     * When built with --enable-mxuv3, FFmpeg may use Ingenic XBurst2
+     * MXUv3 VPR (512-bit) load/store instructions (e.g. SA0/LA0).
+     * Those require 64-byte alignment for fast/defined operation.
+     *
+     * mxuv3 is feature-gated as AV_CPU_FLAG_MXU in this tree.
      */
+
+#if HAVE_SIMD_ALIGN_64
+    if (flags & AV_CPU_FLAG_MXU)
+        return 64;
+#endif
 
     if (flags & AV_CPU_FLAG_MSA)
         return 16;
