@@ -243,12 +243,30 @@ av_cold void ff_h264qpel_init_mips(H264QpelContext *c, int bit_depth)
         ff_mxu_ensure_cu2();
         if (bit_depth == 8) {
             c->put_h264_qpel_pixels_tab[0][0] = ff_put_h264_qpel16_mc00_mxu;
+            c->put_h264_qpel_pixels_tab[0][2] = ff_put_h264_qpel16_mc20_mxu;
+            c->put_h264_qpel_pixels_tab[0][8] = ff_put_h264_qpel16_mc02_mxu;
+            c->put_h264_qpel_pixels_tab[0][10] = ff_put_h264_qpel16_mc22_mxu;
             c->put_h264_qpel_pixels_tab[1][0] = ff_put_h264_qpel8_mc00_mxu;
+            c->put_h264_qpel_pixels_tab[1][2] = ff_put_h264_qpel8_mc20_mxu;
+            c->put_h264_qpel_pixels_tab[1][8] = ff_put_h264_qpel8_mc02_mxu;
+            c->put_h264_qpel_pixels_tab[1][10] = ff_put_h264_qpel8_mc22_mxu;
             c->put_h264_qpel_pixels_tab[2][0] = ff_put_h264_qpel4_mc00_mxu;
+            c->put_h264_qpel_pixels_tab[2][2] = ff_put_h264_qpel4_mc20_mxu;
+            c->put_h264_qpel_pixels_tab[2][8] = ff_put_h264_qpel4_mc02_mxu;
+            c->put_h264_qpel_pixels_tab[2][10] = ff_put_h264_qpel4_mc22_mxu;
 
             c->avg_h264_qpel_pixels_tab[0][0] = ff_avg_h264_qpel16_mc00_mxu;
+            c->avg_h264_qpel_pixels_tab[0][2] = ff_avg_h264_qpel16_mc20_mxu;
+            c->avg_h264_qpel_pixels_tab[0][8] = ff_avg_h264_qpel16_mc02_mxu;
+            c->avg_h264_qpel_pixels_tab[0][10] = ff_avg_h264_qpel16_mc22_mxu;
             c->avg_h264_qpel_pixels_tab[1][0] = ff_avg_h264_qpel8_mc00_mxu;
+            c->avg_h264_qpel_pixels_tab[1][2] = ff_avg_h264_qpel8_mc20_mxu;
+            c->avg_h264_qpel_pixels_tab[1][8] = ff_avg_h264_qpel8_mc02_mxu;
+            c->avg_h264_qpel_pixels_tab[1][10] = ff_avg_h264_qpel8_mc22_mxu;
             c->avg_h264_qpel_pixels_tab[2][0] = ff_avg_h264_qpel4_mc00_mxu;
+            c->avg_h264_qpel_pixels_tab[2][2] = ff_avg_h264_qpel4_mc20_mxu;
+            c->avg_h264_qpel_pixels_tab[2][8] = ff_avg_h264_qpel4_mc02_mxu;
+            c->avg_h264_qpel_pixels_tab[2][10] = ff_avg_h264_qpel4_mc22_mxu;
         }
     }
 }
