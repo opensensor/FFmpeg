@@ -32,9 +32,16 @@
  * registered, so executing MXU instructions here is safe on XBurst2.
  */
 
+#include <stdint.h>
+
 #include "libavutil/intreadwrite.h"
 #include "hpeldsp_mips.h"
 #include "mxu.h"
+
+static inline int ptr_is_aligned4(const void *p, ptrdiff_t stride)
+{
+    return ((((uintptr_t)p) | (uintptr_t)stride) & 3) == 0;
+}
 
 /**
  * Byte-parallel rounding average of 4 packed bytes.
@@ -76,23 +83,42 @@ void ff_put_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
-    for (i = 0; i < h; i++) {
+    if (src_aligned) {
+        for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
-        /* Prefetch a couple of rows ahead to hide SDRAM latency on XBurst2. */
-        if (i + 2 < h) {
-            PREF_LOAD(pixels, pref_off);
-            PREF_STORE(block, pref_off);
-        }
+            /* Prefetch a couple of rows ahead to hide SDRAM latency on XBurst2. */
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
 #endif
-        AV_WN32A(block,      AV_RN32(pixels));
-        AV_WN32A(block + 4,  AV_RN32(pixels + 4));
-        AV_WN32A(block + 8,  AV_RN32(pixels + 8));
-        AV_WN32A(block + 12, AV_RN32(pixels + 12));
-        block  += line_size;
-        pixels += line_size;
+            AV_WN32A(block,      AV_RN32A(pixels));
+            AV_WN32A(block + 4,  AV_RN32A(pixels + 4));
+            AV_WN32A(block + 8,  AV_RN32A(pixels + 8));
+            AV_WN32A(block + 12, AV_RN32A(pixels + 12));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+            /* Prefetch a couple of rows ahead to hide SDRAM latency on XBurst2. */
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
+#endif
+            AV_WN32A(block,      AV_RN32(pixels));
+            AV_WN32A(block + 4,  AV_RN32(pixels + 4));
+            AV_WN32A(block + 8,  AV_RN32(pixels + 8));
+            AV_WN32A(block + 12, AV_RN32(pixels + 12));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -100,11 +126,20 @@ void ff_put_pixels8_mxu(uint8_t *block, const uint8_t *pixels,
                          ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        AV_WN32A(block,     AV_RN32(pixels));
-        AV_WN32A(block + 4, AV_RN32(pixels + 4));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block,     AV_RN32A(pixels));
+            AV_WN32A(block + 4, AV_RN32A(pixels + 4));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block,     AV_RN32(pixels));
+            AV_WN32A(block + 4, AV_RN32(pixels + 4));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -112,10 +147,18 @@ void ff_put_pixels4_mxu(uint8_t *block, const uint8_t *pixels,
                          ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        AV_WN32A(block, AV_RN32(pixels));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, AV_RN32A(pixels));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, AV_RN32(pixels));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -125,23 +168,42 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
-    for (i = 0; i < h; i++) {
+    if (src_aligned) {
+        for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
-        if (i + 2 < h) {
-            PREF_LOAD(pixels, pref_off);
-            PREF_LOAD(block,  pref_off);
-            PREF_STORE(block, pref_off);
-        }
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_LOAD(block,  pref_off);
+                PREF_STORE(block, pref_off);
+            }
 #endif
-        AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32(pixels)));
-        AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32(pixels + 4)));
-        AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32(pixels + 8)));
-        AV_WN32A(block + 12, rnd_avg32(AV_RN32A(block + 12), AV_RN32(pixels + 12)));
-        block  += line_size;
-        pixels += line_size;
+            AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32A(pixels)));
+            AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32A(pixels + 4)));
+            AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32A(pixels + 8)));
+            AV_WN32A(block + 12, rnd_avg32(AV_RN32A(block + 12), AV_RN32A(pixels + 12)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_LOAD(block,  pref_off);
+                PREF_STORE(block, pref_off);
+            }
+#endif
+            AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32(pixels)));
+            AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32(pixels + 4)));
+            AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32(pixels + 8)));
+            AV_WN32A(block + 12, rnd_avg32(AV_RN32A(block + 12), AV_RN32(pixels + 12)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -149,11 +211,20 @@ void ff_avg_pixels8_mxu(uint8_t *block, const uint8_t *pixels,
                          ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     AV_RN32(pixels)));
-        AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), AV_RN32(pixels + 4)));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     AV_RN32A(pixels)));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), AV_RN32A(pixels + 4)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     AV_RN32(pixels)));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), AV_RN32(pixels + 4)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -161,10 +232,18 @@ void ff_avg_pixels4_mxu(uint8_t *block, const uint8_t *pixels,
                          ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        AV_WN32A(block, rnd_avg32(AV_RN32A(block), AV_RN32(pixels)));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, rnd_avg32(AV_RN32A(block), AV_RN32A(pixels)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, rnd_avg32(AV_RN32A(block), AV_RN32(pixels)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -174,26 +253,48 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
-    for (i = 0; i < h; i++) {
+    if (src_aligned) {
+        for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
-        if (i + 2 < h) {
-            PREF_LOAD(pixels, pref_off);
-            PREF_STORE(block, pref_off);
-        }
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
 #endif
-        uint32_t a0 = AV_RN32(pixels),      b0 = AV_RN32(pixels + 1);
-        uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
-        uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
-        uint32_t a3 = AV_RN32(pixels + 12), b3 = AV_RN32(pixels + 13);
-        AV_WN32A(block,      rnd_avg32(a0, b0));
-        AV_WN32A(block + 4,  rnd_avg32(a1, b1));
-        AV_WN32A(block + 8,  rnd_avg32(a2, b2));
-        AV_WN32A(block + 12, rnd_avg32(a3, b3));
-        block  += line_size;
-        pixels += line_size;
+            uint32_t a0 = AV_RN32A(pixels),      b0 = AV_RN32(pixels + 1);
+            uint32_t a1 = AV_RN32A(pixels + 4),  b1 = AV_RN32(pixels + 5);
+            uint32_t a2 = AV_RN32A(pixels + 8),  b2 = AV_RN32(pixels + 9);
+            uint32_t a3 = AV_RN32A(pixels + 12), b3 = AV_RN32(pixels + 13);
+            AV_WN32A(block,      rnd_avg32(a0, b0));
+            AV_WN32A(block + 4,  rnd_avg32(a1, b1));
+            AV_WN32A(block + 8,  rnd_avg32(a2, b2));
+            AV_WN32A(block + 12, rnd_avg32(a3, b3));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
+#endif
+            uint32_t a0 = AV_RN32(pixels),      b0 = AV_RN32(pixels + 1);
+            uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
+            uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
+            uint32_t a3 = AV_RN32(pixels + 12), b3 = AV_RN32(pixels + 13);
+            AV_WN32A(block,      rnd_avg32(a0, b0));
+            AV_WN32A(block + 4,  rnd_avg32(a1, b1));
+            AV_WN32A(block + 8,  rnd_avg32(a2, b2));
+            AV_WN32A(block + 12, rnd_avg32(a3, b3));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -226,23 +327,42 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
-    for (i = 0; i < h; i++) {
+    if (src_aligned) {
+        for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
-        if (i + 2 < h) {
-            PREF_LOAD(pixels, pref_off);
-            PREF_STORE(block, pref_off);
-        }
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
 #endif
-        const uint8_t *p1 = pixels + line_size;
-        AV_WN32A(block,      rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
-        AV_WN32A(block + 4,  rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
-        AV_WN32A(block + 8,  rnd_avg32(AV_RN32(pixels + 8),  AV_RN32(p1 + 8)));
-        AV_WN32A(block + 12, rnd_avg32(AV_RN32(pixels + 12), AV_RN32(p1 + 12)));
-        block  += line_size;
-        pixels += line_size;
+            const uint8_t *p1 = pixels + line_size;
+            AV_WN32A(block,      rnd_avg32(AV_RN32A(pixels),      AV_RN32A(p1)));
+            AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(pixels + 4),  AV_RN32A(p1 + 4)));
+            AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(pixels + 8),  AV_RN32A(p1 + 8)));
+            AV_WN32A(block + 12, rnd_avg32(AV_RN32A(pixels + 12), AV_RN32A(p1 + 12)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+            if (i + 2 < h) {
+                PREF_LOAD(pixels, pref_off);
+                PREF_STORE(block, pref_off);
+            }
+#endif
+            const uint8_t *p1 = pixels + line_size;
+            AV_WN32A(block,      rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
+            AV_WN32A(block + 4,  rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
+            AV_WN32A(block + 8,  rnd_avg32(AV_RN32(pixels + 8),  AV_RN32(p1 + 8)));
+            AV_WN32A(block + 12, rnd_avg32(AV_RN32(pixels + 12), AV_RN32(p1 + 12)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -250,12 +370,22 @@ void ff_put_pixels8_y2_mxu(uint8_t *block, const uint8_t *pixels,
                             ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        const uint8_t *p1 = pixels + line_size;
-        AV_WN32A(block,     rnd_avg32(AV_RN32(pixels),     AV_RN32(p1)));
-        AV_WN32A(block + 4, rnd_avg32(AV_RN32(pixels + 4), AV_RN32(p1 + 4)));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            const uint8_t *p1 = pixels + line_size;
+            AV_WN32A(block,     rnd_avg32(AV_RN32A(pixels),     AV_RN32A(p1)));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32A(pixels + 4), AV_RN32A(p1 + 4)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            const uint8_t *p1 = pixels + line_size;
+            AV_WN32A(block,     rnd_avg32(AV_RN32(pixels),     AV_RN32(p1)));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32(pixels + 4), AV_RN32(p1 + 4)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -263,10 +393,18 @@ void ff_put_pixels4_y2_mxu(uint8_t *block, const uint8_t *pixels,
                             ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        AV_WN32A(block, rnd_avg32(AV_RN32(pixels), AV_RN32(pixels + line_size)));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, rnd_avg32(AV_RN32A(pixels), AV_RN32A(pixels + line_size)));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            AV_WN32A(block, rnd_avg32(AV_RN32(pixels), AV_RN32(pixels + line_size)));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -293,6 +431,7 @@ void ff_put_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
@@ -305,11 +444,20 @@ void ff_put_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
 #endif
         const uint8_t *p1 = pixels + line_size;
         int j;
-        for (j = 0; j < 16; j += 4) {
-            AV_WN32A(block + j, avg4_round(AV_RN32(pixels + j),
-                                           AV_RN32(pixels + j + 1),
-                                           AV_RN32(p1 + j),
-                                           AV_RN32(p1 + j + 1)));
+        if (src_aligned) {
+            for (j = 0; j < 16; j += 4) {
+                AV_WN32A(block + j, avg4_round(AV_RN32A(pixels + j),
+                                               AV_RN32(pixels + j + 1),
+                                               AV_RN32A(p1 + j),
+                                               AV_RN32(p1 + j + 1)));
+            }
+        } else {
+            for (j = 0; j < 16; j += 4) {
+                AV_WN32A(block + j, avg4_round(AV_RN32(pixels + j),
+                                               AV_RN32(pixels + j + 1),
+                                               AV_RN32(p1 + j),
+                                               AV_RN32(p1 + j + 1)));
+            }
         }
         block  += line_size;
         pixels += line_size;
@@ -436,6 +584,7 @@ void ff_put_no_rnd_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                                      ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
@@ -448,11 +597,20 @@ void ff_put_no_rnd_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
 #endif
         const uint8_t *p1 = pixels + line_size;
         int j;
-        for (j = 0; j < 16; j += 4) {
-            AV_WN32A(block + j, avg4_no_rnd(AV_RN32(pixels + j),
-                                            AV_RN32(pixels + j + 1),
-                                            AV_RN32(p1 + j),
-                                            AV_RN32(p1 + j + 1)));
+        if (src_aligned) {
+            for (j = 0; j < 16; j += 4) {
+                AV_WN32A(block + j, avg4_no_rnd(AV_RN32A(pixels + j),
+                                                AV_RN32(pixels + j + 1),
+                                                AV_RN32A(p1 + j),
+                                                AV_RN32(p1 + j + 1)));
+            }
+        } else {
+            for (j = 0; j < 16; j += 4) {
+                AV_WN32A(block + j, avg4_no_rnd(AV_RN32(pixels + j),
+                                                AV_RN32(pixels + j + 1),
+                                                AV_RN32(p1 + j),
+                                                AV_RN32(p1 + j + 1)));
+            }
         }
         block  += line_size;
         pixels += line_size;
@@ -481,6 +639,7 @@ void ff_avg_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
@@ -493,9 +652,16 @@ void ff_avg_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
         }
 #endif
         int j;
-        for (j = 0; j < 16; j += 4) {
-            uint32_t src = rnd_avg32(AV_RN32(pixels + j), AV_RN32(pixels + j + 1));
-            AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+        if (src_aligned) {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = rnd_avg32(AV_RN32A(pixels + j), AV_RN32(pixels + j + 1));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
+        } else {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = rnd_avg32(AV_RN32(pixels + j), AV_RN32(pixels + j + 1));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
         }
         block  += line_size;
         pixels += line_size;
@@ -534,6 +700,7 @@ void ff_avg_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
@@ -547,9 +714,16 @@ void ff_avg_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
 #endif
         const uint8_t *p1 = pixels + line_size;
         int j;
-        for (j = 0; j < 16; j += 4) {
-            uint32_t src = rnd_avg32(AV_RN32(pixels + j), AV_RN32(p1 + j));
-            AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+        if (src_aligned) {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = rnd_avg32(AV_RN32A(pixels + j), AV_RN32A(p1 + j));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
+        } else {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = rnd_avg32(AV_RN32(pixels + j), AV_RN32(p1 + j));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
         }
         block  += line_size;
         pixels += line_size;
@@ -560,14 +734,26 @@ void ff_avg_pixels8_y2_mxu(uint8_t *block, const uint8_t *pixels,
                             ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        const uint8_t *p1 = pixels + line_size;
-        uint32_t s0 = rnd_avg32(AV_RN32(pixels),     AV_RN32(p1));
-        uint32_t s1 = rnd_avg32(AV_RN32(pixels + 4), AV_RN32(p1 + 4));
-        AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     s0));
-        AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), s1));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            const uint8_t *p1 = pixels + line_size;
+            uint32_t s0 = rnd_avg32(AV_RN32A(pixels),     AV_RN32A(p1));
+            uint32_t s1 = rnd_avg32(AV_RN32A(pixels + 4), AV_RN32A(p1 + 4));
+            AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     s0));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), s1));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            const uint8_t *p1 = pixels + line_size;
+            uint32_t s0 = rnd_avg32(AV_RN32(pixels),     AV_RN32(p1));
+            uint32_t s1 = rnd_avg32(AV_RN32(pixels + 4), AV_RN32(p1 + 4));
+            AV_WN32A(block,     rnd_avg32(AV_RN32A(block),     s0));
+            AV_WN32A(block + 4, rnd_avg32(AV_RN32A(block + 4), s1));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -575,11 +761,20 @@ void ff_avg_pixels4_y2_mxu(uint8_t *block, const uint8_t *pixels,
                             ptrdiff_t line_size, int32_t h)
 {
     int i;
-    for (i = 0; i < h; i++) {
-        uint32_t src = rnd_avg32(AV_RN32(pixels), AV_RN32(pixels + line_size));
-        AV_WN32A(block, rnd_avg32(AV_RN32A(block), src));
-        block  += line_size;
-        pixels += line_size;
+    if (ptr_is_aligned4(pixels, line_size)) {
+        for (i = 0; i < h; i++) {
+            uint32_t src = rnd_avg32(AV_RN32A(pixels), AV_RN32A(pixels + line_size));
+            AV_WN32A(block, rnd_avg32(AV_RN32A(block), src));
+            block  += line_size;
+            pixels += line_size;
+        }
+    } else {
+        for (i = 0; i < h; i++) {
+            uint32_t src = rnd_avg32(AV_RN32(pixels), AV_RN32(pixels + line_size));
+            AV_WN32A(block, rnd_avg32(AV_RN32A(block), src));
+            block  += line_size;
+            pixels += line_size;
+        }
     }
 }
 
@@ -589,6 +784,7 @@ void ff_avg_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
 #endif
@@ -602,12 +798,22 @@ void ff_avg_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
 #endif
         const uint8_t *p1 = pixels + line_size;
         int j;
-        for (j = 0; j < 16; j += 4) {
-            uint32_t src = avg4_round(AV_RN32(pixels + j),
-                                      AV_RN32(pixels + j + 1),
-                                      AV_RN32(p1 + j),
-                                      AV_RN32(p1 + j + 1));
-            AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+        if (src_aligned) {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = avg4_round(AV_RN32A(pixels + j),
+                                          AV_RN32(pixels + j + 1),
+                                          AV_RN32A(p1 + j),
+                                          AV_RN32(p1 + j + 1));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
+        } else {
+            for (j = 0; j < 16; j += 4) {
+                uint32_t src = avg4_round(AV_RN32(pixels + j),
+                                          AV_RN32(pixels + j + 1),
+                                          AV_RN32(p1 + j),
+                                          AV_RN32(p1 + j + 1));
+                AV_WN32A(block + j, rnd_avg32(AV_RN32A(block + j), src));
+            }
         }
         block  += line_size;
         pixels += line_size;
