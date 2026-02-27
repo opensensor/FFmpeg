@@ -24,15 +24,17 @@
  *
  * Optimisations over -Os compiled C:
  *  - Word-sized (32-bit) loads and stores for pixel copy/averaging
- *  - Byte-parallel rounding/truncating average via bit manipulation
+ *  - Byte-parallel rounding/truncating average via MXU Q8AVG/Q8AVGR
+ *    (fallback to bit-manipulation if inline asm is unavailable)
  *  - Minimised loop overhead with counted loops
  *
- * These functions are pure MIPS32r2 scalar code — no legacy XBurst1 MXU
- * (XR register) instructions are used.
+ * NOTE: The init path calls ff_mxu_ensure_cu2() before these functions are
+ * registered, so executing MXU instructions here is safe on XBurst2.
  */
 
 #include "libavutil/intreadwrite.h"
 #include "hpeldsp_mips.h"
+#include "mxu.h"
 
 /**
  * Byte-parallel rounding average of 4 packed bytes.
@@ -40,7 +42,15 @@
  */
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
 {
+#if HAVE_INLINE_ASM
+    /* Q8AVGR: per-byte (a + b + 1) >> 1, no cross-byte carry. */
+    S32I2M(xr1, a);
+    S32I2M(xr2, b);
+    Q8AVGR(xr0, xr1, xr2);
+    return S32M2I(xr0);
+#else
     return (a | b) - (((a ^ b) & 0xFEFEFEFEU) >> 1);
+#endif
 }
 
 /**
@@ -49,7 +59,15 @@ static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
  */
 static inline uint32_t no_rnd_avg32(uint32_t a, uint32_t b)
 {
+#if HAVE_INLINE_ASM
+    /* Q8AVG: per-byte (a + b) >> 1, no cross-byte carry. */
+    S32I2M(xr1, a);
+    S32I2M(xr2, b);
+    Q8AVG(xr0, xr1, xr2);
+    return S32M2I(xr0);
+#else
     return (a & b) + (((a ^ b) & 0xFEFEFEFEU) >> 1);
+#endif
 }
 
 /* ---- put_pixels: straight copy ---- */
