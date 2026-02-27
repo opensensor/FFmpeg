@@ -76,7 +76,9 @@ void ff_put_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         /* Prefetch a couple of rows ahead to hide SDRAM latency on XBurst2. */
@@ -123,7 +125,9 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -170,7 +174,9 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -220,7 +226,9 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -285,7 +293,9 @@ void ff_put_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -340,7 +350,9 @@ void ff_put_no_rnd_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                                     ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -379,7 +391,9 @@ void ff_put_no_rnd_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                                     ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -422,7 +436,9 @@ void ff_put_no_rnd_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                                      ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -465,7 +481,9 @@ void ff_avg_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -516,7 +534,9 @@ void ff_avg_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
@@ -569,7 +589,9 @@ void ff_avg_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+#if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+#endif
     for (i = 0; i < h; i++) {
 #if HAVE_INLINE_ASM
         if (i + 2 < h) {
