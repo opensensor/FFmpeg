@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "h264dsp_mips.h"
+
 #include "libavutil/intreadwrite.h"
 
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
