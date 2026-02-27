@@ -114,10 +114,25 @@ static int cpu_flags_cpuinfo(void)
 int ff_get_cpu_flags_mips(void)
 {
 #if defined __linux__ || defined __ANDROID__
+    int flags;
+
     if (cpucfg_available())
-        return cpu_flags_cpucfg();
+        flags = cpu_flags_cpucfg();
     else
-        return cpu_flags_cpuinfo();
+        flags = cpu_flags_cpuinfo();
+
+    /*
+     * If FFmpeg was built with MXU enabled (mxuv3_select="mxu" in this tree),
+     * don't rely on /proc/cpuinfo tokens to opt-in at runtime.
+     *
+     * This matches the expectation for fixed-target firmware builds where
+     * --enable-mxuv3 is passed explicitly.
+     */
+#if HAVE_MXU || HAVE_MXUV3
+    flags |= AV_CPU_FLAG_MXU;
+#endif
+
+    return flags;
 #else
     /* Assume no SIMD ASE supported */
     return 0;
