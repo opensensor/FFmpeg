@@ -76,7 +76,15 @@ void ff_put_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        /* Prefetch a couple of rows ahead to hide SDRAM latency on XBurst2. */
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         AV_WN32A(block,      AV_RN32(pixels));
         AV_WN32A(block + 4,  AV_RN32(pixels + 4));
         AV_WN32A(block + 8,  AV_RN32(pixels + 8));
@@ -115,7 +123,15 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                           ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_LOAD(block,  pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32(pixels)));
         AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32(pixels + 4)));
         AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32(pixels + 8)));
@@ -154,7 +170,14 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         uint32_t a0 = AV_RN32(pixels),      b0 = AV_RN32(pixels + 1);
         uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
         uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
@@ -197,7 +220,14 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         AV_WN32A(block,      rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
         AV_WN32A(block + 4,  rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
@@ -255,7 +285,14 @@ void ff_put_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         int j;
         for (j = 0; j < 16; j += 4) {
@@ -303,7 +340,14 @@ void ff_put_no_rnd_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                                     ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         uint32_t a0 = AV_RN32(pixels),      b0 = AV_RN32(pixels + 1);
         uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
         uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
@@ -335,7 +379,14 @@ void ff_put_no_rnd_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                                     ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         AV_WN32A(block,      no_rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
         AV_WN32A(block + 4,  no_rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
@@ -371,7 +422,14 @@ void ff_put_no_rnd_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                                      ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         int j;
         for (j = 0; j < 16; j += 4) {
@@ -407,7 +465,15 @@ void ff_avg_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_LOAD(block,  pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         int j;
         for (j = 0; j < 16; j += 4) {
             uint32_t src = rnd_avg32(AV_RN32(pixels + j), AV_RN32(pixels + j + 1));
@@ -450,7 +516,15 @@ void ff_avg_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
                              ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_LOAD(block,  pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         int j;
         for (j = 0; j < 16; j += 4) {
@@ -495,7 +569,15 @@ void ff_avg_pixels16_xy2_mxu(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int32_t h)
 {
     int i;
+    const ptrdiff_t pref_off = line_size * 2;
     for (i = 0; i < h; i++) {
+#if HAVE_INLINE_ASM
+        if (i + 2 < h) {
+            PREF_LOAD(pixels, pref_off);
+            PREF_LOAD(block,  pref_off);
+            PREF_STORE(block, pref_off);
+        }
+#endif
         const uint8_t *p1 = pixels + line_size;
         int j;
         for (j = 0; j < 16; j += 4) {
