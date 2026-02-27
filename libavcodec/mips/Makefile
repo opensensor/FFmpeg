@@ -119,3 +119,4 @@ MXU-OBJS-$(CONFIG_PIXBLOCKDSP)            += mips/pixblockdsp_mxu.o
 MXU-OBJS-$(CONFIG_HPELDSP)                += mips/hpeldsp_mxu.o
 MXU-OBJS-$(CONFIG_IDCTDSP)                += mips/idctdsp_mxu.o
 MXU-OBJS-$(CONFIG_H264DSP)                += mips/h264dsp_mxu.o
+MXU-OBJS-$(CONFIG_H264QPEL)               += mips/h264qpel_mxu.o

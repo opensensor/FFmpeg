@@ -577,6 +577,20 @@ void ff_avg_h264_qpel4_mc33_mmi(uint8_t *dst, const uint8_t *src,
         ptrdiff_t dst_stride);
 
 /* MXU (Ingenic XBurst2) optimised H.264 DSP functions */
+void ff_put_h264_qpel16_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                 ptrdiff_t dst_stride);
+void ff_put_h264_qpel8_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                ptrdiff_t dst_stride);
+void ff_put_h264_qpel4_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                ptrdiff_t dst_stride);
+
+void ff_avg_h264_qpel16_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                 ptrdiff_t dst_stride);
+void ff_avg_h264_qpel8_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                ptrdiff_t dst_stride);
+void ff_avg_h264_qpel4_mc00_mxu(uint8_t *dst, const uint8_t *src,
+                                ptrdiff_t dst_stride);
+
 void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride);
 void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride);
 void ff_h264_idct_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride);
