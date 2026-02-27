@@ -125,49 +125,32 @@ static inline uint8_t qpel_clip_shift10(int v)
     return av_clip_uint8((v + 512) >> 10);
 }
 
-static inline void qpel_put_or_avg_row(uint8_t *dst, const uint8_t *pred,
-                                       ptrdiff_t stride, int w, int h,
-                                       int do_avg)
-{
-    for (int y = 0; y < h; y++) {
-        if (!do_avg) {
-            for (int x = 0; x < w; x++)
-                dst[x] = pred[x];
-        } else {
-            for (int x = 0; x < w; x++)
-                dst[x] = (dst[x] + pred[x] + 1) >> 1;
-        }
-        dst  += stride;
-        pred += w;
-    }
-}
-
 static inline void qpel_h_lowpass(uint8_t *dst, const uint8_t *src,
                                   ptrdiff_t stride, int w, int h,
                                   int do_avg)
 {
-    uint8_t pred[16 * 16];
-    uint8_t *p = pred;
-
     for (int y = 0; y < h; y++) {
         const uint8_t *s = src + y * stride - 2;
-        for (int x = 0; x < w; x++) {
-            const int v = qpel_6tap_u8(s + x);
-            p[x] = qpel_clip_shift5(v);
+        if (!do_avg) {
+            for (int x = 0; x < w; x++) {
+                const int v = qpel_6tap_u8(s + x);
+                dst[x] = qpel_clip_shift5(v);
+            }
+        } else {
+            for (int x = 0; x < w; x++) {
+                const int v = qpel_6tap_u8(s + x);
+                const uint8_t p = qpel_clip_shift5(v);
+                dst[x] = (dst[x] + p + 1) >> 1;
+            }
         }
-        p += w;
+        dst += stride;
     }
-
-    qpel_put_or_avg_row(dst, pred, stride, w, h, do_avg);
 }
 
 static inline void qpel_v_lowpass(uint8_t *dst, const uint8_t *src,
                                   ptrdiff_t stride, int w, int h,
                                   int do_avg)
 {
-    uint8_t pred[16 * 16];
-    uint8_t *p = pred;
-
     for (int y = 0; y < h; y++) {
         const uint8_t *s0 = src + (y - 2) * stride;
         const uint8_t *s1 = s0 + stride;
@@ -176,14 +159,20 @@ static inline void qpel_v_lowpass(uint8_t *dst, const uint8_t *src,
         const uint8_t *s4 = s3 + stride;
         const uint8_t *s5 = s4 + stride;
 
-        for (int x = 0; x < w; x++) {
-            const int v = s0[x] + s5[x] - 5 * (s1[x] + s4[x]) + 20 * (s2[x] + s3[x]);
-            p[x] = qpel_clip_shift5(v);
+        if (!do_avg) {
+            for (int x = 0; x < w; x++) {
+                const int v = s0[x] + s5[x] - 5 * (s1[x] + s4[x]) + 20 * (s2[x] + s3[x]);
+                dst[x] = qpel_clip_shift5(v);
+            }
+        } else {
+            for (int x = 0; x < w; x++) {
+                const int v = s0[x] + s5[x] - 5 * (s1[x] + s4[x]) + 20 * (s2[x] + s3[x]);
+                const uint8_t p = qpel_clip_shift5(v);
+                dst[x] = (dst[x] + p + 1) >> 1;
+            }
         }
-        p += w;
+        dst += stride;
     }
-
-    qpel_put_or_avg_row(dst, pred, stride, w, h, do_avg);
 }
 
 static inline void qpel_hv_lowpass(uint8_t *dst, const uint8_t *src,
@@ -192,8 +181,6 @@ static inline void qpel_hv_lowpass(uint8_t *dst, const uint8_t *src,
 {
     /* Ring buffer of 6 horizontally-filtered rows (int16 intermediate). */
     int16_t hbuf[6][16];
-    uint8_t pred[16 * 16];
-    uint8_t *p = pred;
 
     for (int r = 0; r < 6; r++) {
         const uint8_t *s = src + (r - 2) * stride - 2;
@@ -209,21 +196,32 @@ static inline void qpel_hv_lowpass(uint8_t *dst, const uint8_t *src,
         const int i4 = (y + 4) % 6;
         const int i5 = (y + 5) % 6;
 
-        for (int x = 0; x < w; x++) {
-            const int v = hbuf[i0][x] + hbuf[i5][x]
-                        - 5 * (hbuf[i1][x] + hbuf[i4][x])
-                        + 20 * (hbuf[i2][x] + hbuf[i3][x]);
-            p[x] = qpel_clip_shift10(v);
+        if (!do_avg) {
+            for (int x = 0; x < w; x++) {
+                const int v = hbuf[i0][x] + hbuf[i5][x]
+                            - 5 * (hbuf[i1][x] + hbuf[i4][x])
+                            + 20 * (hbuf[i2][x] + hbuf[i3][x]);
+                dst[x] = qpel_clip_shift10(v);
+            }
+        } else {
+            for (int x = 0; x < w; x++) {
+                const int v = hbuf[i0][x] + hbuf[i5][x]
+                            - 5 * (hbuf[i1][x] + hbuf[i4][x])
+                            + 20 * (hbuf[i2][x] + hbuf[i3][x]);
+                const uint8_t p = qpel_clip_shift10(v);
+                dst[x] = (dst[x] + p + 1) >> 1;
+            }
         }
-        p += w;
+        dst += stride;
 
-        /* Compute next horizontal intermediate row (source row y+4) into slot y%6. */
-        const uint8_t *sn = src + (y + 4) * stride - 2;
-        for (int x = 0; x < w; x++)
-            hbuf[y % 6][x] = qpel_6tap_u8(sn + x);
+        /* Compute next horizontal intermediate row (source row y+4) into slot y%6.
+         * Not needed after the last output row. */
+        if (y + 1 < h) {
+            const uint8_t *sn = src + (y + 4) * stride - 2;
+            for (int x = 0; x < w; x++)
+                hbuf[y % 6][x] = qpel_6tap_u8(sn + x);
+        }
     }
-
-    qpel_put_or_avg_row(dst, pred, stride, w, h, do_avg);
 }
 
 void ff_put_h264_qpel16_mc00_mxu(uint8_t *dst, const uint8_t *src,
