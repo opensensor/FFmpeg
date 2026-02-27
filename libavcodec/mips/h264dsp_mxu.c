@@ -127,10 +127,6 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
 
-    /* Prefetch destination rows — hides cache miss latency on XBurst2 */
-    PREF_LOAD(dst, 0);
-    PREF_LOAD(dst, stride);
-
     block[0] += 1 << 5;
 
     /* Column pass */
@@ -146,10 +142,6 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i + 4*3] = z0 - z3;
     }
 
-    /* Prefetch remaining destination rows */
-    PREF_LOAD(dst, 2 * stride);
-    PREF_LOAD(dst, 3 * stride);
-
     /* Row pass + add to destination + clip */
     for (i = 0; i < 4; i++) {
         const unsigned int z0 =  block[0 + 4*i]     +  (unsigned int)block[2 + 4*i];
@@ -163,13 +155,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((int)(z0 - z3) >> 6));
     }
 
-    /* Clear block: use VPR zero store if aligned, else memset */
-    if (__builtin_expect(((uintptr_t)block & 63) == 0, 1)) {
-        VPR_ZERO_INIT();
-        SA0_VPR0_AT(block);  /* 64 bytes covers 32 bytes of 4x4 block + padding */
-    } else {
-        memset(block, 0, 16 * sizeof(int16_t));
-    }
+    memset(block, 0, 16 * sizeof(int16_t));
 }
 
 /* ---- Full 8x8 IDCT add ---- */
@@ -177,12 +163,6 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
-
-    /* Prefetch first 4 destination rows during column pass */
-    PREF_LOAD(dst, 0);
-    PREF_LOAD(dst, stride);
-    PREF_LOAD(dst, 2 * stride);
-    PREF_LOAD(dst, 3 * stride);
 
     block[0] += 32;
 
@@ -218,12 +198,6 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i+4*8] = b6 - b1;
     }
 
-    /* Prefetch remaining destination rows */
-    PREF_LOAD(dst, 4 * stride);
-    PREF_LOAD(dst, 5 * stride);
-    PREF_LOAD(dst, 6 * stride);
-    PREF_LOAD(dst, 7 * stride);
-
     /* Row pass + add to destination + clip */
     for (i = 0; i < 8; i++) {
         const unsigned a0 =  block[0+i*8] + (unsigned)block[4+i*8];
@@ -256,14 +230,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         dst[i*stride + 7] = clip_uint8(dst[i*stride + 7] + ((int)(b0 - b7) >> 6));
     }
 
-    /* Clear 128-byte block: use VPR zero store if aligned, else memset */
-    if (__builtin_expect(((uintptr_t)block & 63) == 0, 1)) {
-        VPR_ZERO_INIT();
-        SA0_VPR0_AT(block);                     /* bytes   0-63  */
-        SA0_VPR0_AT((int8_t *)block + 64);      /* bytes  64-127 */
-    } else {
-        memset(block, 0, 64 * sizeof(int16_t));
-    }
+    memset(block, 0, 64 * sizeof(int16_t));
 }
 
 /* ---- Add pixels 4x4 + clear ---- */
@@ -271,7 +238,6 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
-    int16_t *block_start = block;
     for (i = 0; i < 4; i++) {
         dst[0] += (unsigned)block[0];
         dst[1] += (unsigned)block[1];
@@ -280,13 +246,7 @@ void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride)
         dst   += stride;
         block += 4;
     }
-    /* Clear 32-byte block */
-    if (__builtin_expect(((uintptr_t)block_start & 63) == 0, 1)) {
-        VPR_ZERO_INIT();
-        SA0_VPR0_AT(block_start);  /* 64 bytes covers 32-byte block */
-    } else {
-        memset(block_start, 0, 16 * sizeof(int16_t));
-    }
+    memset(block - 16, 0, 16 * sizeof(int16_t));
 }
 
 /* ---- Add pixels 8x8 + clear ---- */
@@ -294,7 +254,6 @@ void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride)
 void ff_h264_add_pixels8_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
-    int16_t *block_start = block;
     for (i = 0; i < 8; i++) {
         dst[0] += (unsigned)block[0];
         dst[1] += (unsigned)block[1];
@@ -307,14 +266,7 @@ void ff_h264_add_pixels8_8_mxu(uint8_t *dst, int16_t *block, int stride)
         dst   += stride;
         block += 8;
     }
-    /* Clear 128-byte block */
-    if (__builtin_expect(((uintptr_t)block_start & 63) == 0, 1)) {
-        VPR_ZERO_INIT();
-        SA0_VPR0_AT(block_start);
-        SA0_VPR0_AT((int8_t *)block_start + 64);
-    } else {
-        memset(block_start, 0, 64 * sizeof(int16_t));
-    }
+    memset(block - 64, 0, 64 * sizeof(int16_t));
 }
 
 /* ---- Multi-block dispatchers ---- */
@@ -483,11 +435,6 @@ static av_always_inline void h264_loop_filter_luma_mxu(uint8_t *pix,
             continue;
         }
         for (d = 0; d < inner_iters; d++) {
-            /* Prefetch next pixel row's filter neighbourhood */
-            if (d + 1 < inner_iters) {
-                PREF_LOAD(pix + ystride, -3 * xstride);
-                PREF_LOAD(pix + ystride, 0);
-            }
             const int p0 = pix[-1*xstride];
             const int p1 = pix[-2*xstride];
             const int p2 = pix[-3*xstride];

@@ -36,7 +36,6 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
 #include "idctdsp_mips.h"
-#include "mxu.h"
 
 /* ---- Pixel clamping functions ---- */
 
