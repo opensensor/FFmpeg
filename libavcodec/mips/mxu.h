@@ -151,4 +151,34 @@
     __asm__ __volatile__(".word %0" :: "i"( \
         0x70100007 | ((xra) << 6) | ((xrb) << 10) | ((xrc) << 14)))
 
+/* ------------------------------------------------------------------ */
+/*  CU2 (Coprocessor 2) lazy enablement for XBurst2 MXUv3             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * ff_mxu_ensure_cu2() — trigger the kernel's lazy CU2 enablement.
+ *
+ * On Ingenic XBurst2 (T31/T40/T41) the kernel enables CU2 lazily on
+ * the first coprocessor exception.  However the do_ri handler (which
+ * catches SPECIAL2-encoded MXU instructions like S32I2M, Q8AVG, LA0,
+ * SA0) has its CU2 enablement code disabled (#if 0 in traps.c).
+ * Only the do_cpu handler (exc_code=11, CpU) works, and it is only
+ * reached by COP2-encoded instructions.
+ *
+ * VPR_ZERO (0x4a80000b) is COP2-encoded (bits 31:26 = 010010).
+ * Executing it as the very first MXU instruction triggers exc_code=11
+ * with CE=2, the kernel enables CU2, and all subsequent SPECIAL2
+ * instructions (XR ops, LA0, SA0) work without faulting.
+ *
+ * Call this once from each *_init_mips() function before registering
+ * any MXU function pointers.  After the first call CU2 stays enabled
+ * for the lifetime of the process, so the cost is one trapped
+ * instruction total.
+ */
+static inline void ff_mxu_ensure_cu2(void)
+{
+    /* VPR0 = VPR0 - VPR0  (COP2 opcode, zeroes VPR0 as side-effect) */
+    __asm__ __volatile__(".word 0x4a80000b" ::: "memory");
+}
+
 #endif /* AVCODEC_MIPS_MXU_H */

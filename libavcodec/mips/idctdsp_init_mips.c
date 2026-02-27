@@ -23,6 +23,7 @@
 #include "libavutil/mips/cpu.h"
 #include "idctdsp_mips.h"
 #include "xvididct_mips.h"
+#include "mxu.h"
 
 av_cold void ff_idctdsp_init_mips(IDCTDSPContext *c, AVCodecContext *avctx,
                           unsigned high_bit_depth)
@@ -62,6 +63,7 @@ av_cold void ff_idctdsp_init_mips(IDCTDSPContext *c, AVCodecContext *avctx,
     }
 
     if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
         if ((avctx->lowres != 1) && (avctx->lowres != 2) && (avctx->lowres != 3) &&
             (avctx->bits_per_raw_sample != 10) &&
             (avctx->bits_per_raw_sample != 12) &&

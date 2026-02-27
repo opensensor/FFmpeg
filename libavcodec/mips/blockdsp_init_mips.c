@@ -21,6 +21,7 @@
 
 #include "libavutil/mips/cpu.h"
 #include "blockdsp_mips.h"
+#include "mxu.h"
 
 void ff_blockdsp_init_mips(BlockDSPContext *c)
 {
@@ -43,6 +44,7 @@ void ff_blockdsp_init_mips(BlockDSPContext *c)
     }
 
     if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
         c->clear_block  = ff_clear_block_mxu;
         c->clear_blocks = ff_clear_blocks_mxu;
     }

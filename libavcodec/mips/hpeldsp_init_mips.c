@@ -22,6 +22,7 @@
 #include "libavutil/mips/cpu.h"
 #include "../hpeldsp.h"
 #include "libavcodec/mips/hpeldsp_mips.h"
+#include "mxu.h"
 
 void ff_hpeldsp_init_mips(HpelDSPContext *c, int flags)
 {
@@ -111,6 +112,7 @@ void ff_hpeldsp_init_mips(HpelDSPContext *c, int flags)
     }
 
     if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
         c->put_pixels_tab[0][0] = ff_put_pixels16_mxu;
         c->put_pixels_tab[0][1] = ff_put_pixels16_x2_mxu;
         c->put_pixels_tab[0][2] = ff_put_pixels16_y2_mxu;

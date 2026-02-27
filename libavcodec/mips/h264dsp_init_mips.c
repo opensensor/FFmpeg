@@ -22,6 +22,7 @@
 #include "libavutil/attributes.h"
 #include "libavutil/mips/cpu.h"
 #include "h264dsp_mips.h"
+#include "mxu.h"
 
 av_cold void ff_h264dsp_init_mips(H264DSPContext *c, const int bit_depth,
                                   const int chroma_format_idc)
@@ -129,6 +130,7 @@ av_cold void ff_h264dsp_init_mips(H264DSPContext *c, const int bit_depth,
     }
 
     if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
         if (bit_depth == 8) {
             c->idct_add  = ff_h264_idct_add_8_mxu;
             c->idct8_add = ff_h264_idct8_add_8_mxu;
