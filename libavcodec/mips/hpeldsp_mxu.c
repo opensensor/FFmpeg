@@ -20,63 +20,36 @@
 
 /**
  * @file
- * Ingenic XBurst2 MXU SIMD optimised half-pel DSP functions.
+ * Ingenic XBurst2 optimised half-pel DSP functions.
  *
  * Optimisations over -Os compiled C:
  *  - Word-sized (32-bit) loads and stores for pixel copy/averaging
- *  - MXU Q8AVGR/Q8AVG hardware SIMD for byte-parallel averaging
- *    (replaces 5-operation bit-manipulation with single instruction)
+ *  - Byte-parallel rounding/truncating average via bit manipulation
  *  - Minimised loop overhead with counted loops
  *
- * MXU instruction usage:
- *  - S32I2M: move GPR → XR register
- *  - S32M2I: move XR register → GPR
- *  - Q8AVGR: packed byte rounding average (4 bytes in parallel)
- *    xra[i] = (xrb[i] + xrc[i] + 1) >> 1 for each byte lane
- *  - Q8AVG:  packed byte truncating average (4 bytes in parallel)
- *    xra[i] = (xrb[i] + xrc[i]) >> 1 for each byte lane
+ * These functions are pure MIPS32r2 scalar code — no legacy XBurst1 MXU
+ * (XR register) instructions are used.
  */
 
 #include "libavutil/intreadwrite.h"
 #include "hpeldsp_mips.h"
 
-/* XBurst2 XR (MXU) intrinsics for packed 8-bit SIMD */
-#include "mxu.h"
-
 /**
- * MXU-accelerated byte-parallel rounding average of 4 packed bytes.
- *
- * Uses the Q8AVGR hardware instruction which computes:
+ * Byte-parallel rounding average of 4 packed bytes.
  *   result[i] = (a[i] + b[i] + 1) >> 1
- * for each of the 4 byte lanes simultaneously.
- *
- * This replaces the 5-operation software implementation:
- *   (a | b) - (((a ^ b) & 0xFEFEFEFE) >> 1)
  */
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
 {
-    S32I2M(xr1, a);
-    S32I2M(xr2, b);
-    Q8AVGR(xr1, xr1, xr2);
-    return (uint32_t)S32M2I(xr1);
+    return (a | b) - (((a ^ b) & 0xFEFEFEFEU) >> 1);
 }
 
 /**
- * MXU-accelerated byte-parallel truncating average of 4 packed bytes.
- *
- * Uses the Q8AVG hardware instruction which computes:
+ * Byte-parallel truncating average of 4 packed bytes.
  *   result[i] = (a[i] + b[i]) >> 1
- * for each of the 4 byte lanes simultaneously.
- *
- * This replaces the 5-operation software implementation:
- *   (a & b) + (((a ^ b) & 0xFEFEFEFE) >> 1)
  */
 static inline uint32_t no_rnd_avg32(uint32_t a, uint32_t b)
 {
-    S32I2M(xr1, a);
-    S32I2M(xr2, b);
-    Q8AVG(xr1, xr1, xr2);
-    return (uint32_t)S32M2I(xr1);
+    return (a & b) + (((a ^ b) & 0xFEFEFEFEU) >> 1);
 }
 
 /* ---- put_pixels: straight copy ---- */

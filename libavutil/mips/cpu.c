@@ -94,7 +94,13 @@ static int cpu_flags_cpuinfo(void)
                 flags |= AV_CPU_FLAG_MMI;
             if (strstr(buf, " msa"))
                 flags |= AV_CPU_FLAG_MSA;
-            if (strstr(buf, " mxuv3"))
+            /*
+             * mxuv3 (XBurst2) uses a different ISA (VPR/COP2) from
+             * legacy MXU (xr/SPECIAL2 on XBurst1).  The MXU-flagged
+             * functions in FFmpeg have been rewritten to use pure
+             * MIPS32r2 scalar code, so they are safe on both platforms.
+             */
+            if (strstr(buf, " mxu"))
                 flags |= AV_CPU_FLAG_MXU;
 
             break;
@@ -123,11 +129,10 @@ size_t ff_get_cpu_max_align_mips(void)
     int flags = av_get_cpu_flags();
 
     /*
-     * MXUv3 VPR registers are 512 bits (64 bytes) wide and the
-     * LA0/SA0 load/store instructions require 64-byte aligned memory.
+     * MXU-flagged code is currently pure scalar MIPS32r2, so no
+     * special alignment is needed beyond the default.  When real
+     * MXUv3 VPR (512-bit) instructions are added, bump this to 64.
      */
-    if (flags & AV_CPU_FLAG_MXU)
-        return 64;
 
     if (flags & AV_CPU_FLAG_MSA)
         return 16;

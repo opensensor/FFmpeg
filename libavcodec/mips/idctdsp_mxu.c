@@ -20,27 +20,22 @@
 
 /**
  * @file
- * Ingenic XBurst2 MXU SIMD optimised IDCT and pixel clamping functions.
+ * Ingenic XBurst2 optimised IDCT and pixel clamping functions.
  *
  * Optimisations over -Os compiled C:
- *  - MXU Q8ADD_AA/Q8ADD_SS for saturating byte add/sub in add_pixels_clamped
  *  - Word-sized loads and stores for pixel clamping
  *  - Hand-scheduled IDCT butterfly with DC-only shortcut
  *  - Full 8-row unrolling where beneficial
+ *  - Branchless uint8 clip for saturating arithmetic
  *
- * MXU instruction usage:
- *  - S32I2M/S32M2I: move between GPR and XR registers
- *  - Q8ADD_AA: saturating unsigned byte add (4 lanes, clamps to 255)
- *  - Q8ADD_SS: saturating unsigned byte sub (4 lanes, clamps to 0)
+ * These functions are pure MIPS32r2 scalar code — no legacy XBurst1 MXU
+ * (XR register) instructions are used.
  */
 
 #include <string.h>
 #include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
 #include "idctdsp_mips.h"
-
-/* XBurst2 XR (MXU) intrinsics for packed 8-bit SIMD */
-#include "mxu.h"
 
 /* ---- Pixel clamping functions ---- */
 
@@ -90,60 +85,24 @@ void ff_put_signed_pixels_clamped_mxu(const int16_t *block,
 }
 
 /**
- * Add IDCT residuals to pixels with clamping using MXU SIMD.
+ * Add IDCT residuals to pixels with clamping.
  *
- * For each row, we split the 8 int16 residuals into groups of 4 pixels.
- * For each group, we determine if any residual exceeds byte range.
- * When all 4 residuals fit in a byte and have the same sign, we use
- * Q8ADD_AA (positive) or Q8ADD_SS (negative) to process 4 pixels at once.
- * Otherwise we fall back to per-pixel clip_uint8.
- *
- * The common case in video decoding is small residuals (especially after
- * quantization), so the SIMD fast path is taken most of the time.
+ * Uses branchless clip_uint8 for per-pixel saturation.
  */
 void ff_add_pixels_clamped_mxu(const int16_t *block,
                                 uint8_t *restrict pixels,
                                 ptrdiff_t line_size)
 {
-    int i, j;
+    int i;
     for (i = 0; i < 8; i++) {
-        /* Process two groups of 4 pixels per row */
-        for (j = 0; j < 8; j += 4) {
-            int16_t r0 = block[j], r1 = block[j+1];
-            int16_t r2 = block[j+2], r3 = block[j+3];
-
-            /* Check if all 4 residuals are non-negative and fit in a byte */
-            if ((r0 | r1 | r2 | r3) >= 0 &&
-                (r0 | r1 | r2 | r3) <= 255) {
-                /* All positive/zero: pack into XR and use Q8ADD_AA */
-                uint32_t res4 = ((uint32_t)(r0 & 0xFF))       |
-                                ((uint32_t)(r1 & 0xFF) << 8)  |
-                                ((uint32_t)(r2 & 0xFF) << 16) |
-                                ((uint32_t)(r3 & 0xFF) << 24);
-                S32I2M(xr1, AV_RN32(pixels + j));
-                S32I2M(xr2, res4);
-                Q8ADD_AA(xr1, xr1, xr2);
-                AV_WN32(pixels + j, (uint32_t)S32M2I(xr1));
-            } else if ((r0 & r1 & r2 & r3) < 0 &&
-                       r0 >= -255 && r1 >= -255 &&
-                       r2 >= -255 && r3 >= -255) {
-                /* All negative: pack |residual| and use Q8ADD_SS */
-                uint32_t res4 = ((uint32_t)((-r0) & 0xFF))       |
-                                ((uint32_t)((-r1) & 0xFF) << 8)  |
-                                ((uint32_t)((-r2) & 0xFF) << 16) |
-                                ((uint32_t)((-r3) & 0xFF) << 24);
-                S32I2M(xr1, AV_RN32(pixels + j));
-                S32I2M(xr2, res4);
-                Q8ADD_SS(xr1, xr1, xr2);
-                AV_WN32(pixels + j, (uint32_t)S32M2I(xr1));
-            } else {
-                /* Mixed signs or large residuals: scalar fallback */
-                pixels[j]   = clip_uint8(pixels[j]   + r0);
-                pixels[j+1] = clip_uint8(pixels[j+1] + r1);
-                pixels[j+2] = clip_uint8(pixels[j+2] + r2);
-                pixels[j+3] = clip_uint8(pixels[j+3] + r3);
-            }
-        }
+        pixels[0] = clip_uint8(pixels[0] + block[0]);
+        pixels[1] = clip_uint8(pixels[1] + block[1]);
+        pixels[2] = clip_uint8(pixels[2] + block[2]);
+        pixels[3] = clip_uint8(pixels[3] + block[3]);
+        pixels[4] = clip_uint8(pixels[4] + block[4]);
+        pixels[5] = clip_uint8(pixels[5] + block[5]);
+        pixels[6] = clip_uint8(pixels[6] + block[6]);
+        pixels[7] = clip_uint8(pixels[7] + block[7]);
         pixels += line_size;
         block  += 8;
     }
