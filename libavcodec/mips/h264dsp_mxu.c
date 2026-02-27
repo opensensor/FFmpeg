@@ -452,31 +452,21 @@ static av_always_inline void h264_loop_filter_luma_mxu(uint8_t *pix,
             pix += inner_iters * ystride;
             continue;
         }
-        for (d = 0; d < inner_iters; d++) {
+        if (xstride == 1) {
+            for (d = 0; d < inner_iters; d++) {
 #if HAVE_INLINE_ASM
-            /* Prefetch a couple of steps ahead along the iteration dimension. */
-            if (d + 2 < inner_iters)
-                PREF_LOAD(pix, ystride * 2);
+                /* Prefetch a couple of steps ahead along the iteration dimension. */
+                if (d + 2 < inner_iters)
+                    PREF_LOAD(pix, ystride * 2);
 #endif
-            int p0, p1, p2, q0, q1, q2;
-
-            if (xstride == 1) {
                 const uint32_t wP = H264_LD32(pix - 3); /* p2 p1 p0 q0 */
                 const uint32_t wQ = H264_LD32(pix + 0); /* q0 q1 q2 q3 */
-                p2 = H264_B0(wP);
-                p1 = H264_B1(wP);
-                p0 = H264_B2(wP);
-                q0 = H264_B3(wP);
-                q1 = H264_B1(wQ);
-                q2 = H264_B2(wQ);
-            } else {
-                p0 = pix[-1*xstride];
-                p1 = pix[-2*xstride];
-                p2 = pix[-3*xstride];
-                q0 = pix[0];
-                q1 = pix[1*xstride];
-                q2 = pix[2*xstride];
-            }
+                const int p2 = H264_B0(wP);
+                const int p1 = H264_B1(wP);
+                const int p0 = H264_B2(wP);
+                const int q0 = H264_B3(wP);
+                const int q1 = H264_B1(wQ);
+                const int q2 = H264_B2(wQ);
 
             const int abs_p0q0 = FFABS(p0 - q0);
             const int abs_p1p0 = FFABS(p1 - p0);
@@ -506,6 +496,50 @@ static av_always_inline void h264_loop_filter_luma_mxu(uint8_t *pix,
                 pix[0]        = clip_uint8(q0 - i_delta);
             }
             pix += ystride;
+        }
+        } else {
+            for (d = 0; d < inner_iters; d++) {
+#if HAVE_INLINE_ASM
+                /* Prefetch a couple of steps ahead along the iteration dimension. */
+                if (d + 2 < inner_iters)
+                    PREF_LOAD(pix, ystride * 2);
+#endif
+                const int p0 = pix[-1*xstride];
+                const int p1 = pix[-2*xstride];
+                const int p2 = pix[-3*xstride];
+                const int q0 = pix[0];
+                const int q1 = pix[1*xstride];
+                const int q2 = pix[2*xstride];
+
+                const int abs_p0q0 = FFABS(p0 - q0);
+                const int abs_p1p0 = FFABS(p1 - p0);
+                const int abs_q1q0 = FFABS(q1 - q0);
+
+                if (abs_p0q0 < alpha &&
+                    abs_p1p0 < beta &&
+                    abs_q1q0 < beta) {
+
+                    int tc = tc_orig;
+                    int i_delta;
+                    const int p0q0_avg = (p0 + q0 + 1) >> 1;
+
+                    if (FFABS(p2 - p0) < beta) {
+                        if (tc_orig)
+                            pix[-2*xstride] = p1 + clip3((((p2 + p0q0_avg) >> 1) - p1), -tc_orig, tc_orig);
+                        tc++;
+                    }
+                    if (FFABS(q2 - q0) < beta) {
+                        if (tc_orig)
+                            pix[xstride] = q1 + clip3((((q2 + p0q0_avg) >> 1) - q1), -tc_orig, tc_orig);
+                        tc++;
+                    }
+
+                    i_delta = clip3((((q0 - p0) * 4) + (p1 - q1) + 4) >> 3, -tc, tc);
+                    pix[-xstride] = clip_uint8(p0 + i_delta);
+                    pix[0]        = clip_uint8(q0 - i_delta);
+                }
+                pix += ystride;
+            }
         }
     }
 }
@@ -541,31 +575,21 @@ static av_always_inline void h264_loop_filter_luma_intra_mxu(uint8_t *pix,
 {
     int d;
     const int iters = 4 * inner_iters;
-    for (d = 0; d < iters; d++) {
+    if (xstride == 1) {
+        for (d = 0; d < iters; d++) {
 #if HAVE_INLINE_ASM
-        if (d + 4 < iters)
-            PREF_LOAD(pix, ystride * 4);
+            if (d + 4 < iters)
+                PREF_LOAD(pix, ystride * 4);
 #endif
-        int p0, p1, p2, q0, q1, q2;
-        uint32_t wP = 0, wQ = 0;
-
-        if (xstride == 1) {
-            wP = H264_LD32(pix - 4); /* p3 p2 p1 p0 */
-            wQ = H264_LD32(pix + 0); /* q0 q1 q2 q3 */
-            p2 = H264_B1(wP);
-            p1 = H264_B2(wP);
-            p0 = H264_B3(wP);
-            q0 = H264_B0(wQ);
-            q1 = H264_B1(wQ);
-            q2 = H264_B2(wQ);
-        } else {
-            p2 = pix[-3*xstride];
-            p1 = pix[-2*xstride];
-            p0 = pix[-1*xstride];
-            q0 = pix[0*xstride];
-            q1 = pix[1*xstride];
-            q2 = pix[2*xstride];
-        }
+            const uint32_t wP = H264_LD32(pix - 4); /* p3 p2 p1 p0 */
+            const uint32_t wQ = H264_LD32(pix + 0); /* q0 q1 q2 q3 */
+            const int p3 = H264_B0(wP);
+            const int p2 = H264_B1(wP);
+            const int p1 = H264_B2(wP);
+            const int p0 = H264_B3(wP);
+            const int q0 = H264_B0(wQ);
+            const int q1 = H264_B1(wQ);
+            const int q2 = H264_B2(wQ);
 
         const int abs_p0q0 = FFABS(p0 - q0);
         const int abs_p1p0 = FFABS(p1 - p0);
@@ -577,7 +601,6 @@ static av_always_inline void h264_loop_filter_luma_intra_mxu(uint8_t *pix,
 
             if (abs_p0q0 < ((alpha >> 2) + 2)) {
                 if (FFABS(p2 - p0) < beta) {
-                    const int p3 = (xstride == 1) ? H264_B0(wP) : pix[-4*xstride];
                     pix[-1*xstride] = (p2 + 2*p1 + 2*p0 + 2*q0 + q1 + 4) >> 3;
                     pix[-2*xstride] = (p2 + p1 + p0 + q0 + 2) >> 2;
                     pix[-3*xstride] = (2*p3 + 3*p2 + p1 + p0 + q0 + 4) >> 3;
@@ -585,7 +608,7 @@ static av_always_inline void h264_loop_filter_luma_intra_mxu(uint8_t *pix,
                     pix[-1*xstride] = (2*p1 + p0 + q1 + 2) >> 2;
                 }
                 if (FFABS(q2 - q0) < beta) {
-                    const int q3 = (xstride == 1) ? H264_B3(wQ) : pix[3*xstride];
+                    const int q3 = H264_B3(wQ);
                     pix[0*xstride] = (p1 + 2*p0 + 2*q0 + 2*q1 + q2 + 4) >> 3;
                     pix[1*xstride] = (p0 + q0 + q1 + q2 + 2) >> 2;
                     pix[2*xstride] = (2*q3 + 3*q2 + q1 + q0 + p0 + 4) >> 3;
@@ -598,6 +621,52 @@ static av_always_inline void h264_loop_filter_luma_intra_mxu(uint8_t *pix,
             }
         }
         pix += ystride;
+        }
+    } else {
+        for (d = 0; d < iters; d++) {
+#if HAVE_INLINE_ASM
+            if (d + 4 < iters)
+                PREF_LOAD(pix, ystride * 4);
+#endif
+            const int p2 = pix[-3*xstride];
+            const int p1 = pix[-2*xstride];
+            const int p0 = pix[-1*xstride];
+            const int q0 = pix[0*xstride];
+            const int q1 = pix[1*xstride];
+            const int q2 = pix[2*xstride];
+
+            const int abs_p0q0 = FFABS(p0 - q0);
+            const int abs_p1p0 = FFABS(p1 - p0);
+            const int abs_q1q0 = FFABS(q1 - q0);
+
+            if (abs_p0q0 < alpha &&
+                abs_p1p0 < beta &&
+                abs_q1q0 < beta) {
+
+                if (abs_p0q0 < ((alpha >> 2) + 2)) {
+                    if (FFABS(p2 - p0) < beta) {
+                        const int p3 = pix[-4*xstride];
+                        pix[-1*xstride] = (p2 + 2*p1 + 2*p0 + 2*q0 + q1 + 4) >> 3;
+                        pix[-2*xstride] = (p2 + p1 + p0 + q0 + 2) >> 2;
+                        pix[-3*xstride] = (2*p3 + 3*p2 + p1 + p0 + q0 + 4) >> 3;
+                    } else {
+                        pix[-1*xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+                    }
+                    if (FFABS(q2 - q0) < beta) {
+                        const int q3 = pix[3*xstride];
+                        pix[0*xstride] = (p1 + 2*p0 + 2*q0 + 2*q1 + q2 + 4) >> 3;
+                        pix[1*xstride] = (p0 + q0 + q1 + q2 + 2) >> 2;
+                        pix[2*xstride] = (2*q3 + 3*q2 + q1 + q0 + p0 + 4) >> 3;
+                    } else {
+                        pix[0*xstride] = (2*q1 + q0 + p1 + 2) >> 2;
+                    }
+                } else {
+                    pix[-1*xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+                    pix[ 0*xstride] = (2*q1 + q0 + p1 + 2) >> 2;
+                }
+            }
+            pix += ystride;
+        }
     }
 }
 
@@ -632,25 +701,17 @@ static av_always_inline void h264_loop_filter_chroma_mxu(uint8_t *pix,
             pix += inner_iters * ystride;
             continue;
         }
-        for (d = 0; d < inner_iters; d++) {
+        if (xstride == 1) {
+            for (d = 0; d < inner_iters; d++) {
 #if HAVE_INLINE_ASM
-            if (d + 2 < inner_iters)
-                PREF_LOAD(pix, ystride * 2);
+                if (d + 2 < inner_iters)
+                    PREF_LOAD(pix, ystride * 2);
 #endif
-            int p0, p1, q0, q1;
-
-            if (xstride == 1) {
                 const uint32_t w = H264_LD32(pix - 2); /* p1 p0 q0 q1 */
-                p1 = H264_B0(w);
-                p0 = H264_B1(w);
-                q0 = H264_B2(w);
-                q1 = H264_B3(w);
-            } else {
-                p0 = pix[-1*xstride];
-                p1 = pix[-2*xstride];
-                q0 = pix[0];
-                q1 = pix[1*xstride];
-            }
+                const int p1 = H264_B0(w);
+                const int p0 = H264_B1(w);
+                const int q0 = H264_B2(w);
+                const int q1 = H264_B3(w);
 
             const int abs_p0q0 = FFABS(p0 - q0);
             const int abs_p1p0 = FFABS(p1 - p0);
@@ -665,6 +726,32 @@ static av_always_inline void h264_loop_filter_chroma_mxu(uint8_t *pix,
                 pix[0]        = clip_uint8(q0 - delta);
             }
             pix += ystride;
+        }
+        } else {
+            for (d = 0; d < inner_iters; d++) {
+#if HAVE_INLINE_ASM
+                if (d + 2 < inner_iters)
+                    PREF_LOAD(pix, ystride * 2);
+#endif
+                const int p0 = pix[-1*xstride];
+                const int p1 = pix[-2*xstride];
+                const int q0 = pix[0];
+                const int q1 = pix[1*xstride];
+
+                const int abs_p0q0 = FFABS(p0 - q0);
+                const int abs_p1p0 = FFABS(p1 - p0);
+                const int abs_q1q0 = FFABS(q1 - q0);
+
+                if (abs_p0q0 < alpha &&
+                    abs_p1p0 < beta &&
+                    abs_q1q0 < beta) {
+
+                    int delta = clip3(((q0 - p0) * 4 + (p1 - q1) + 4) >> 3, -(int)tc, (int)tc);
+                    pix[-xstride] = clip_uint8(p0 + delta);
+                    pix[0]        = clip_uint8(q0 - delta);
+                }
+                pix += ystride;
+            }
         }
     }
 }
@@ -707,25 +794,17 @@ static av_always_inline void h264_loop_filter_chroma_intra_mxu(uint8_t *pix,
 {
     int d;
     const int iters = 4 * inner_iters;
-    for (d = 0; d < iters; d++) {
+    if (xstride == 1) {
+        for (d = 0; d < iters; d++) {
 #if HAVE_INLINE_ASM
-        if (d + 4 < iters)
-            PREF_LOAD(pix, ystride * 4);
+            if (d + 4 < iters)
+                PREF_LOAD(pix, ystride * 4);
 #endif
-        int p0, p1, q0, q1;
-
-        if (xstride == 1) {
             const uint32_t w = H264_LD32(pix - 2); /* p1 p0 q0 q1 */
-            p1 = H264_B0(w);
-            p0 = H264_B1(w);
-            q0 = H264_B2(w);
-            q1 = H264_B3(w);
-        } else {
-            p0 = pix[-1*xstride];
-            p1 = pix[-2*xstride];
-            q0 = pix[0];
-            q1 = pix[1*xstride];
-        }
+            const int p1 = H264_B0(w);
+            const int p0 = H264_B1(w);
+            const int q0 = H264_B2(w);
+            const int q1 = H264_B3(w);
 
         const int abs_p0q0 = FFABS(p0 - q0);
         const int abs_p1p0 = FFABS(p1 - p0);
@@ -739,6 +818,31 @@ static av_always_inline void h264_loop_filter_chroma_intra_mxu(uint8_t *pix,
             pix[0]        = (2*q1 + q0 + p1 + 2) >> 2;
         }
         pix += ystride;
+    }
+    } else {
+        for (d = 0; d < iters; d++) {
+#if HAVE_INLINE_ASM
+            if (d + 4 < iters)
+                PREF_LOAD(pix, ystride * 4);
+#endif
+            const int p0 = pix[-1*xstride];
+            const int p1 = pix[-2*xstride];
+            const int q0 = pix[0];
+            const int q1 = pix[1*xstride];
+
+            const int abs_p0q0 = FFABS(p0 - q0);
+            const int abs_p1p0 = FFABS(p1 - p0);
+            const int abs_q1q0 = FFABS(q1 - q0);
+
+            if (abs_p0q0 < alpha &&
+                abs_p1p0 < beta &&
+                abs_q1q0 < beta) {
+
+                pix[-xstride] = (2*p1 + p0 + q1 + 2) >> 2;
+                pix[0]        = (2*q1 + q0 + p1 + 2) >> 2;
+            }
+            pix += ystride;
+        }
     }
 }
 
