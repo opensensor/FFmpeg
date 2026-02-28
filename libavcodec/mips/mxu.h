@@ -293,6 +293,23 @@
            "i"(MXUV3_COP2_INST(19, 0, 0, (vpr), 0x0f))               \
         : "memory")
 
+/*
+ * No-sync variants for hot paths.
+ *
+ * The conservative macros above append a full MIPS `sync` after each COP2
+ * instruction.  On XBurst2 this can be very expensive in tight loops.
+ * The *_NS variants omit the trailing `sync` and rely on natural
+ * inter-instruction hazards + the final memory access (SA0) to serialize.
+ */
+
+#define MXUV3_ZERO_VPR_NS(vpr)                                         \
+    __asm__ __volatile__(                                               \
+        ".word %0\n\t"  /* SUMZ(0): VSR0 = 0          */              \
+        ".word %1\n\t"  /* MFSUM(vpr, 0): VPR = VSR0  */              \
+        :: "i"(MXUV3_COP2_INST(19, 0, 0, 0, 0x1c)),                   \
+           "i"(MXUV3_COP2_INST(19, 0, 0, (vpr), 0x0f))               \
+        : "memory")
+
 /* ------------------------------------------------------------------ */
 /*  VPR integer min/max (rs=16, hardware-probed on A1/T41)             */
 /* ------------------------------------------------------------------ */
@@ -310,16 +327,32 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1D)) : "memory")
 
+#define VPR_MAXSH_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1D)) : "memory")
+
 #define VPR_MINSH(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x15)) : "memory")
+
+#define VPR_MINSH_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x15)) : "memory")
 
 #define VPR_MAXSW(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1E)) : "memory")
 
+#define VPR_MAXSW_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1E)) : "memory")
+
 #define VPR_MINSW(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x16)) : "memory")
+
+#define VPR_MINSW_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x16)) : "memory")
 
 /* ------------------------------------------------------------------ */
@@ -336,24 +369,48 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 1)) : "memory")
 
+#define VPR_ADDUH_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 1)) : "memory")
+
 #define VPR_SUBUH(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 9)) : "memory")
+
+#define VPR_SUBUH_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 9)) : "memory")
 
 #define VPR_ADDUB(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 0)) : "memory")
 
+#define VPR_ADDUB_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 0)) : "memory")
+
 #define VPR_SUBUB(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 8)) : "memory")
+
+#define VPR_SUBUB_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 8)) : "memory")
 
 #define VPR_ADDUW(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 2)) : "memory")
 
+#define VPR_ADDUW_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 2)) : "memory")
+
 #define VPR_SUBUW(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 10)) : "memory")
+
+#define VPR_SUBUW_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 10)) : "memory")
 
 /* ------------------------------------------------------------------ */
@@ -364,8 +421,16 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x04)) : "memory")
 
+#define VPR_AND_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x04)) : "memory")
+
 #define VPR_OR(vrd, vrs, vrp) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x0C)) : "memory")
+
+#define VPR_OR_NS(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x0C)) : "memory")
 
 /* ------------------------------------------------------------------ */
@@ -386,8 +451,16 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 33)) : "memory")
 
+#define VPR_SLLW_IMM_NS(vrd, vrs, amt) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 33)) : "memory")
+
 #define VPR_SRLW_IMM(vrd, vrs, amt) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 50)) : "memory")
+
+#define VPR_SRLW_IMM_NS(vrd, vrs, amt) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 50)) : "memory")
 
 /*
@@ -402,12 +475,24 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 34)) : "memory")
 
+#define VPR_SLLH_VAR_NS(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 34)) : "memory")
+
 #define VPR_SLLW_VAR(vrd, vrs, vramt) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 33)) : "memory")
 
+#define VPR_SLLW_VAR_NS(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 33)) : "memory")
+
 #define VPR_SRLW_VAR(vrd, vrs, vramt) \
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 50)) : "memory")
+
+#define VPR_SRLW_VAR_NS(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\t" :: \
         "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 50)) : "memory")
 
 /* ------------------------------------------------------------------ */

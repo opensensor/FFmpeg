@@ -121,7 +121,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     block[0] += 1 << 5;
 
     /* Column pass */
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT4)
     {
         /*
          * Vectorize the 4 independent columns by treating the 4 columns as
@@ -152,36 +152,36 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(1, r1);
         LA0_VPR_AT(2, r2);
         LA0_VPR_AT(3, r3);
-        MXUV3_ZERO_VPR(15);
+        MXUV3_ZERO_VPR_NS(15);
 
         /* z0 = r0 + r2, z1 = r0 - r2 */
-        VPR_ADDUW(4, 0, 2);
-        VPR_SUBUW(5, 0, 2);
+        VPR_ADDUW_NS(4, 0, 2);
+        VPR_SUBUW_NS(5, 0, 2);
 
         /* Arithmetic >> 1 for r1 and r3 (per-lane) using SRLW + sign fill */
         /* t1 = r1 >> 1 */
-        VPR_SRLW_IMM(6, 1, 31);     /* sign bit -> {0,1} */
-        VPR_SUBUW(6, 15, 6);       /* 0 - sign -> {0,0xFFFFFFFF} */
-        VPR_SLLW_IMM(7, 6, 31);    /* fill mask for >>1 */
-        VPR_SRLW_IMM(6, 1, 1);
-        VPR_OR(6, 6, 7);
+        VPR_SRLW_IMM_NS(6, 1, 31);     /* sign bit -> {0,1} */
+        VPR_SUBUW_NS(6, 15, 6);       /* 0 - sign -> {0,0xFFFFFFFF} */
+        VPR_SLLW_IMM_NS(7, 6, 31);    /* fill mask for >>1 */
+        VPR_SRLW_IMM_NS(6, 1, 1);
+        VPR_OR_NS(6, 6, 7);
 
         /* t3 = r3 >> 1 */
-        VPR_SRLW_IMM(8, 3, 31);
-        VPR_SUBUW(8, 15, 8);
-        VPR_SLLW_IMM(9, 8, 31);
-        VPR_SRLW_IMM(8, 3, 1);
-        VPR_OR(8, 8, 9);
+        VPR_SRLW_IMM_NS(8, 3, 31);
+        VPR_SUBUW_NS(8, 15, 8);
+        VPR_SLLW_IMM_NS(9, 8, 31);
+        VPR_SRLW_IMM_NS(8, 3, 1);
+        VPR_OR_NS(8, 8, 9);
 
         /* z2 = (r1>>1) - r3, z3 = r1 + (r3>>1) */
-        VPR_SUBUW(10, 6, 3);
-        VPR_ADDUW(11, 1, 8);
+        VPR_SUBUW_NS(10, 6, 3);
+        VPR_ADDUW_NS(11, 1, 8);
 
         /* outputs */
-        VPR_ADDUW(12, 4, 11);  /* row0 */
-        VPR_ADDUW(13, 5, 10);  /* row1 */
-        VPR_SUBUW(14, 5, 10);  /* row2 */
-        VPR_SUBUW(4, 4, 11);   /* row3 (reuse v4) */
+        VPR_ADDUW_NS(12, 4, 11);  /* row0 */
+        VPR_ADDUW_NS(13, 5, 10);  /* row1 */
+        VPR_SUBUW_NS(14, 5, 10);  /* row2 */
+        VPR_SUBUW_NS(4, 4, 11);   /* row3 (reuse v4) */
 
         SA0_VPR_AT(12, o0);
         SA0_VPR_AT(13, o1);
@@ -195,7 +195,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
             block[k + 3 * 4] = (int16_t)o3[k];
         }
     }
-#else
+#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
     for (i = 0; i < 4; i++) {
         const unsigned int z0 =  block[i + 4*0]     +  (unsigned)block[i + 4*2];
         const unsigned int z1 =  block[i + 4*0]     -  (unsigned)block[i + 4*2];
@@ -207,11 +207,11 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i + 4*2] = z1 - z2;
         block[i + 4*3] = z0 - z3;
     }
-#endif
+#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
 
     /* Row pass + add to destination + clip (word-packed store) */
     {
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT4)
         /* Vectorize 4 independent rows (lanes=rows) and feed scalar clip/store. */
         LOCAL_ALIGNED_64(int32_t, c0, [16]);
         LOCAL_ALIGNED_64(int32_t, c1, [16]);
@@ -237,35 +237,35 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(1, c1);
         LA0_VPR_AT(2, c2);
         LA0_VPR_AT(3, c3);
-        MXUV3_ZERO_VPR(15);
+        MXUV3_ZERO_VPR_NS(15);
 
         /* z0 = c0 + c2, z1 = c0 - c2 */
-        VPR_ADDUW(4, 0, 2);
-        VPR_SUBUW(5, 0, 2);
+        VPR_ADDUW_NS(4, 0, 2);
+        VPR_SUBUW_NS(5, 0, 2);
 
         /* t1 = c1 >> 1 (arith) */
-        VPR_SRLW_IMM(6, 1, 31);
-        VPR_SUBUW(6, 15, 6);
-        VPR_SLLW_IMM(7, 6, 31);
-        VPR_SRLW_IMM(6, 1, 1);
-        VPR_OR(6, 6, 7);
+        VPR_SRLW_IMM_NS(6, 1, 31);
+        VPR_SUBUW_NS(6, 15, 6);
+        VPR_SLLW_IMM_NS(7, 6, 31);
+        VPR_SRLW_IMM_NS(6, 1, 1);
+        VPR_OR_NS(6, 6, 7);
 
         /* t3 = c3 >> 1 (arith) */
-        VPR_SRLW_IMM(8, 3, 31);
-        VPR_SUBUW(8, 15, 8);
-        VPR_SLLW_IMM(9, 8, 31);
-        VPR_SRLW_IMM(8, 3, 1);
-        VPR_OR(8, 8, 9);
+        VPR_SRLW_IMM_NS(8, 3, 31);
+        VPR_SUBUW_NS(8, 15, 8);
+        VPR_SLLW_IMM_NS(9, 8, 31);
+        VPR_SRLW_IMM_NS(8, 3, 1);
+        VPR_OR_NS(8, 8, 9);
 
         /* z2 = (c1>>1) - c3, z3 = c1 + (c3>>1) */
-        VPR_SUBUW(10, 6, 3);
-        VPR_ADDUW(11, 1, 8);
+        VPR_SUBUW_NS(10, 6, 3);
+        VPR_ADDUW_NS(11, 1, 8);
 
         /* row outputs: y0..y3 = (z0+z3),(z1+z2),(z1-z2),(z0-z3) */
-        VPR_ADDUW(12, 4, 11);
-        VPR_ADDUW(13, 5, 10);
-        VPR_SUBUW(14, 5, 10);
-        VPR_SUBUW(4,  4, 11);
+        VPR_ADDUW_NS(12, 4, 11);
+        VPR_ADDUW_NS(13, 5, 10);
+        VPR_SUBUW_NS(14, 5, 10);
+        VPR_SUBUW_NS(4,  4, 11);
 
         SA0_VPR_AT(12, y0);
         SA0_VPR_AT(13, y1);
@@ -281,7 +281,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                 (clip_uint8(((p >> 16) & 0xFF) + ((int)y2[i] >> 6)) << 16) |
                 (clip_uint8(( p >> 24)         + ((int)y3[i] >> 6)) << 24));
         }
-#else
+#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
         for (i = 0; i < 4; i++) {
             const unsigned int z0 =  block[0 + 4*i]     +  (unsigned int)block[2 + 4*i];
             const unsigned int z1 =  block[0 + 4*i]     -  (unsigned int)block[2 + 4*i];
@@ -295,7 +295,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                 (clip_uint8(((p >> 16) & 0xFF) + ((int)(z1 - z2) >> 6)) << 16) |
                 (clip_uint8(( p >> 24)         + ((int)(z0 - z3) >> 6)) << 24));
         }
-#endif
+#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
     }
 
     memset(block, 0, 16 * sizeof(int16_t));
@@ -310,7 +310,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     block[0] += 32;
 
     /* Column pass */
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT8)
     {
         /* Lanes 0..7 = columns 0..7; process all 8 columns in parallel. */
         LOCAL_ALIGNED_64(int32_t, r0, [16]);
@@ -353,91 +353,91 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(5, r5);
         LA0_VPR_AT(6, r6);
         LA0_VPR_AT(7, r7);
-        MXUV3_ZERO_VPR(15);
+        MXUV3_ZERO_VPR_NS(15);
 
         /* Helpers: arithmetic shifts (per lane) */
         /* t = sra(src, 1) -> dst */
 #define VPR_SRAW1(dst, src, tsign, tmask, tfill) do { \
-            VPR_SRLW_IMM((tsign), (src), 31);      \
-            VPR_SUBUW((tmask), 15, (tsign));       \
-            VPR_SLLW_IMM((tfill), (tmask), 31);    \
-            VPR_SRLW_IMM((dst), (src), 1);         \
-            VPR_OR((dst), (dst), (tfill));         \
+            VPR_SRLW_IMM_NS((tsign), (src), 31);      \
+            VPR_SUBUW_NS((tmask), 15, (tsign));       \
+            VPR_SLLW_IMM_NS((tfill), (tmask), 31);    \
+            VPR_SRLW_IMM_NS((dst), (src), 1);         \
+            VPR_OR_NS((dst), (dst), (tfill));         \
         } while (0)
         /* t = sra(src, 2) -> dst */
 #define VPR_SRAW2(dst, src, tsign, tmask, tfill) do { \
-            VPR_SRLW_IMM((tsign), (src), 31);      \
-            VPR_SUBUW((tmask), 15, (tsign));       \
-            VPR_SLLW_IMM((tfill), (tmask), 30);    \
-            VPR_SRLW_IMM((dst), (src), 2);         \
-            VPR_OR((dst), (dst), (tfill));         \
+            VPR_SRLW_IMM_NS((tsign), (src), 31);      \
+            VPR_SUBUW_NS((tmask), 15, (tsign));       \
+            VPR_SLLW_IMM_NS((tfill), (tmask), 30);    \
+            VPR_SRLW_IMM_NS((dst), (src), 2);         \
+            VPR_OR_NS((dst), (dst), (tfill));         \
         } while (0)
 
         /* a0 = r0 + r4, a2 = r0 - r4 */
-        VPR_ADDUW(8, 0, 4);
-        VPR_SUBUW(9, 0, 4);
+        VPR_ADDUW_NS(8, 0, 4);
+        VPR_SUBUW_NS(9, 0, 4);
 
         /* a4 = (r2>>1) - r6, a6 = (r6>>1) + r2 */
         VPR_SRAW1(10, 2, 11, 12, 13); /* t_r2 */
-        VPR_SUBUW(10, 10, 6);
+        VPR_SUBUW_NS(10, 10, 6);
         VPR_SRAW1(14, 6, 11, 12, 13); /* t_r6 */
-        VPR_ADDUW(14, 14, 2);
+        VPR_ADDUW_NS(14, 14, 2);
 
         /* b0..b6 */
-        VPR_ADDUW(16, 8, 14);  /* b0 */
-        VPR_ADDUW(17, 9, 10);  /* b2 */
-        VPR_SUBUW(18, 9, 10);  /* b4 */
-        VPR_SUBUW(19, 8, 14);  /* b6 */
+        VPR_ADDUW_NS(16, 8, 14);  /* b0 */
+        VPR_ADDUW_NS(17, 9, 10);  /* b2 */
+        VPR_SUBUW_NS(18, 9, 10);  /* b4 */
+        VPR_SUBUW_NS(19, 8, 14);  /* b6 */
 
         /* a1 = r5 - r3 - r7 - (r7>>1) */
-        VPR_SUBUW(20, 5, 3);
-        VPR_SUBUW(20, 20, 7);
+        VPR_SUBUW_NS(20, 5, 3);
+        VPR_SUBUW_NS(20, 20, 7);
         VPR_SRAW1(21, 7, 11, 12, 13);
-        VPR_SUBUW(20, 20, 21);
+        VPR_SUBUW_NS(20, 20, 21);
 
         /* a3 = r1 + r7 - r3 - (r3>>1) */
-        VPR_ADDUW(22, 1, 7);
-        VPR_SUBUW(22, 22, 3);
+        VPR_ADDUW_NS(22, 1, 7);
+        VPR_SUBUW_NS(22, 22, 3);
         VPR_SRAW1(21, 3, 11, 12, 13);
-        VPR_SUBUW(22, 22, 21);
+        VPR_SUBUW_NS(22, 22, 21);
 
         /* a5 = r7 + r5 + (r5>>1) - r1 */
-        VPR_ADDUW(23, 7, 5);
+        VPR_ADDUW_NS(23, 7, 5);
         VPR_SRAW1(21, 5, 11, 12, 13);
-        VPR_ADDUW(23, 23, 21);
-        VPR_SUBUW(23, 23, 1);
+        VPR_ADDUW_NS(23, 23, 21);
+        VPR_SUBUW_NS(23, 23, 1);
 
         /* a7 = r3 + r5 + r1 + (r1>>1) */
-        VPR_ADDUW(24, 3, 5);
-        VPR_ADDUW(24, 24, 1);
+        VPR_ADDUW_NS(24, 3, 5);
+        VPR_ADDUW_NS(24, 24, 1);
         VPR_SRAW1(21, 1, 11, 12, 13);
-        VPR_ADDUW(24, 24, 21);
+        VPR_ADDUW_NS(24, 24, 21);
 
         /* b1 = (a7>>2) + a1 */
         VPR_SRAW2(25, 24, 11, 12, 13);
-        VPR_ADDUW(25, 25, 20);
+        VPR_ADDUW_NS(25, 25, 20);
 
         /* b3 = a3 + (a5>>2) */
         VPR_SRAW2(26, 23, 11, 12, 13);
-        VPR_ADDUW(26, 22, 26);
+        VPR_ADDUW_NS(26, 22, 26);
 
         /* b5 = (a3>>2) - a5 */
         VPR_SRAW2(27, 22, 11, 12, 13);
-        VPR_SUBUW(27, 27, 23);
+        VPR_SUBUW_NS(27, 27, 23);
 
         /* b7 = a7 - (a1>>2) */
         VPR_SRAW2(28, 20, 11, 12, 13);
-        VPR_SUBUW(28, 24, 28);
+        VPR_SUBUW_NS(28, 24, 28);
 
         /* Store back into block as in scalar code */
-        VPR_ADDUW(29, 16, 28); /* row0 = b0 + b7 */
-        VPR_SUBUW(30, 16, 28); /* row7 = b0 - b7 */
-        VPR_ADDUW(31, 17, 27); /* row1 = b2 + b5 */
-        VPR_SUBUW(8,  17, 27); /* row6 = b2 - b5 (reuse v8) */
-        VPR_ADDUW(9,  18, 26); /* row2 = b4 + b3 */
-        VPR_SUBUW(10, 18, 26); /* row5 = b4 - b3 */
-        VPR_ADDUW(11, 19, 25); /* row3 = b6 + b1 */
-        VPR_SUBUW(12, 19, 25); /* row4 = b6 - b1 */
+        VPR_ADDUW_NS(29, 16, 28); /* row0 = b0 + b7 */
+        VPR_SUBUW_NS(30, 16, 28); /* row7 = b0 - b7 */
+        VPR_ADDUW_NS(31, 17, 27); /* row1 = b2 + b5 */
+        VPR_SUBUW_NS(8,  17, 27); /* row6 = b2 - b5 (reuse v8) */
+        VPR_ADDUW_NS(9,  18, 26); /* row2 = b4 + b3 */
+        VPR_SUBUW_NS(10, 18, 26); /* row5 = b4 - b3 */
+        VPR_ADDUW_NS(11, 19, 25); /* row3 = b6 + b1 */
+        VPR_SUBUW_NS(12, 19, 25); /* row4 = b6 - b1 */
 
         SA0_VPR_AT(29, o0);
         SA0_VPR_AT(31, o1);
@@ -462,7 +462,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 #undef VPR_SRAW1
 #undef VPR_SRAW2
     }
-#else
+#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
     for (i = 0; i < 8; i++) {
         const unsigned int a0 =  block[i+0*8] + (unsigned)block[i+4*8];
         const unsigned int a2 =  block[i+0*8] - (unsigned)block[i+4*8];
@@ -493,11 +493,11 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i+3*8] = b6 + b1;
         block[i+4*8] = b6 - b1;
     }
-#endif
+#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
 
     /* Row pass + add to destination + clip */
     {
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT8)
         /* Lanes 0..7 = rows 0..7; process all 8 rows in parallel. */
         LOCAL_ALIGNED_64(int32_t, c0, [16]);
         LOCAL_ALIGNED_64(int32_t, c1, [16]);
@@ -539,86 +539,86 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(5, c5);
         LA0_VPR_AT(6, c6);
         LA0_VPR_AT(7, c7);
-        MXUV3_ZERO_VPR(15);
+        MXUV3_ZERO_VPR_NS(15);
 
         /* Arithmetic shifts helpers */
 #define VPR_SRAW1(dst, src, tsign, tmask, tfill) do { \
-            VPR_SRLW_IMM((tsign), (src), 31);      \
-            VPR_SUBUW((tmask), 15, (tsign));       \
-            VPR_SLLW_IMM((tfill), (tmask), 31);    \
-            VPR_SRLW_IMM((dst), (src), 1);         \
-            VPR_OR((dst), (dst), (tfill));         \
+            VPR_SRLW_IMM_NS((tsign), (src), 31);      \
+            VPR_SUBUW_NS((tmask), 15, (tsign));       \
+            VPR_SLLW_IMM_NS((tfill), (tmask), 31);    \
+            VPR_SRLW_IMM_NS((dst), (src), 1);         \
+            VPR_OR_NS((dst), (dst), (tfill));         \
         } while (0)
 #define VPR_SRAW2(dst, src, tsign, tmask, tfill) do { \
-            VPR_SRLW_IMM((tsign), (src), 31);      \
-            VPR_SUBUW((tmask), 15, (tsign));       \
-            VPR_SLLW_IMM((tfill), (tmask), 30);    \
-            VPR_SRLW_IMM((dst), (src), 2);         \
-            VPR_OR((dst), (dst), (tfill));         \
+            VPR_SRLW_IMM_NS((tsign), (src), 31);      \
+            VPR_SUBUW_NS((tmask), 15, (tsign));       \
+            VPR_SLLW_IMM_NS((tfill), (tmask), 30);    \
+            VPR_SRLW_IMM_NS((dst), (src), 2);         \
+            VPR_OR_NS((dst), (dst), (tfill));         \
         } while (0)
 
         /* a0 = c0 + c4, a2 = c0 - c4 */
-        VPR_ADDUW(8, 0, 4);
-        VPR_SUBUW(9, 0, 4);
+        VPR_ADDUW_NS(8, 0, 4);
+        VPR_SUBUW_NS(9, 0, 4);
 
         /* a4 = (c2>>1) - c6, a6 = (c6>>1) + c2 */
         VPR_SRAW1(10, 2, 11, 12, 13);
-        VPR_SUBUW(10, 10, 6);
+        VPR_SUBUW_NS(10, 10, 6);
         VPR_SRAW1(14, 6, 11, 12, 13);
-        VPR_ADDUW(14, 14, 2);
+        VPR_ADDUW_NS(14, 14, 2);
 
         /* b0..b6 */
-        VPR_ADDUW(16, 8, 14);
-        VPR_ADDUW(17, 9, 10);
-        VPR_SUBUW(18, 9, 10);
-        VPR_SUBUW(19, 8, 14);
+        VPR_ADDUW_NS(16, 8, 14);
+        VPR_ADDUW_NS(17, 9, 10);
+        VPR_SUBUW_NS(18, 9, 10);
+        VPR_SUBUW_NS(19, 8, 14);
 
         /* a1 = c5 - c3 - c7 - (c7>>1) */
-        VPR_SUBUW(20, 5, 3);
-        VPR_SUBUW(20, 20, 7);
+        VPR_SUBUW_NS(20, 5, 3);
+        VPR_SUBUW_NS(20, 20, 7);
         VPR_SRAW1(21, 7, 11, 12, 13);
-        VPR_SUBUW(20, 20, 21);
+        VPR_SUBUW_NS(20, 20, 21);
 
         /* a3 = c1 + c7 - c3 - (c3>>1) */
-        VPR_ADDUW(22, 1, 7);
-        VPR_SUBUW(22, 22, 3);
+        VPR_ADDUW_NS(22, 1, 7);
+        VPR_SUBUW_NS(22, 22, 3);
         VPR_SRAW1(21, 3, 11, 12, 13);
-        VPR_SUBUW(22, 22, 21);
+        VPR_SUBUW_NS(22, 22, 21);
 
         /* a5 = c7 + c5 + (c5>>1) - c1 */
-        VPR_ADDUW(23, 7, 5);
+        VPR_ADDUW_NS(23, 7, 5);
         VPR_SRAW1(21, 5, 11, 12, 13);
-        VPR_ADDUW(23, 23, 21);
-        VPR_SUBUW(23, 23, 1);
+        VPR_ADDUW_NS(23, 23, 21);
+        VPR_SUBUW_NS(23, 23, 1);
 
         /* a7 = c3 + c5 + c1 + (c1>>1) */
-        VPR_ADDUW(24, 3, 5);
-        VPR_ADDUW(24, 24, 1);
+        VPR_ADDUW_NS(24, 3, 5);
+        VPR_ADDUW_NS(24, 24, 1);
         VPR_SRAW1(21, 1, 11, 12, 13);
-        VPR_ADDUW(24, 24, 21);
+        VPR_ADDUW_NS(24, 24, 21);
 
         /* b1..b7 */
         VPR_SRAW2(25, 24, 11, 12, 13);
-        VPR_ADDUW(25, 25, 20);
+        VPR_ADDUW_NS(25, 25, 20);
 
         VPR_SRAW2(26, 23, 11, 12, 13);
-        VPR_ADDUW(26, 22, 26);
+        VPR_ADDUW_NS(26, 22, 26);
 
         VPR_SRAW2(27, 22, 11, 12, 13);
-        VPR_SUBUW(27, 27, 23);
+        VPR_SUBUW_NS(27, 27, 23);
 
         VPR_SRAW2(28, 20, 11, 12, 13);
-        VPR_SUBUW(28, 24, 28);
+        VPR_SUBUW_NS(28, 24, 28);
 
         /* Pixel deltas in output order */
-        VPR_ADDUW(29, 16, 28); /* d0 */
-        VPR_ADDUW(30, 17, 27); /* d1 */
-        VPR_ADDUW(31, 18, 26); /* d2 */
-        VPR_ADDUW(8,  19, 25); /* d3 */
-        VPR_SUBUW(9,  19, 25); /* d4 */
-        VPR_SUBUW(10, 18, 26); /* d5 */
-        VPR_SUBUW(11, 17, 27); /* d6 */
-        VPR_SUBUW(12, 16, 28); /* d7 */
+        VPR_ADDUW_NS(29, 16, 28); /* d0 */
+        VPR_ADDUW_NS(30, 17, 27); /* d1 */
+        VPR_ADDUW_NS(31, 18, 26); /* d2 */
+        VPR_ADDUW_NS(8,  19, 25); /* d3 */
+        VPR_SUBUW_NS(9,  19, 25); /* d4 */
+        VPR_SUBUW_NS(10, 18, 26); /* d5 */
+        VPR_SUBUW_NS(11, 17, 27); /* d6 */
+        VPR_SUBUW_NS(12, 16, 28); /* d7 */
 
         SA0_VPR_AT(29, y0);
         SA0_VPR_AT(30, y1);
@@ -647,7 +647,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
 #undef VPR_SRAW1
 #undef VPR_SRAW2
-#else
+#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
         for (i = 0; i < 8; i++) {
             const unsigned a0 =  block[0+i*8] + (unsigned)block[4+i*8];
             const unsigned a2 =  block[0+i*8] - (unsigned)block[4+i*8];
@@ -685,7 +685,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                     (clip_uint8(( p1 >> 24)         + ((int)(b0 - b7) >> 6)) << 24));
             }
         }
-#endif
+#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
     }
 
     memset(block, 0, 64 * sizeof(int16_t));

@@ -39,7 +39,7 @@
 #include "hpeldsp_mips.h"
 #include "mxu.h"
 
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
 /* Per-byte mask used by rnd_avg32/no_rnd_avg32 bit-hacks: 0xFE in each byte. */
 static const uint32_t vpr_mask_fefefefe[16] __attribute__((aligned(64))) = {
     0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU,
@@ -153,7 +153,7 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
     const ptrdiff_t pref_off = line_size * 2;
     /* VPR constants/scratch (aligned for LA0/SA0) */
     LOCAL_ALIGNED_64(uint32_t, va, [16]);
@@ -163,7 +163,7 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 #endif
     if (src_aligned) {
         for (i = 0; i < h; i++) {
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             if (i + 2 < h) {
                 PREF_LOAD(pixels, pref_off);
                 PREF_LOAD(block,  pref_off);
@@ -207,7 +207,7 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
         }
     } else {
         for (i = 0; i < h; i++) {
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             if (i + 2 < h) {
                 PREF_LOAD(pixels, pref_off);
                 PREF_LOAD(block,  pref_off);
@@ -298,7 +298,7 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
     const ptrdiff_t pref_off = line_size * 2;
     LOCAL_ALIGNED_64(uint32_t, va, [16]);
     LOCAL_ALIGNED_64(uint32_t, vb, [16]);
@@ -317,7 +317,7 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             uint32_t a1 = AV_RN32A(pixels + 4),  b1 = AV_RN32(pixels + 5);
             uint32_t a2 = AV_RN32A(pixels + 8),  b2 = AV_RN32(pixels + 9);
             uint32_t a3 = AV_RN32A(pixels + 12), b3 = AV_RN32(pixels + 13);
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             va[0] = a0; va[1] = a1; va[2] = a2; va[3] = a3;
             vb[0] = b0; vb[1] = b1; vb[2] = b2; vb[3] = b3;
             va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
@@ -356,7 +356,7 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
             uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
             uint32_t a3 = AV_RN32(pixels + 12), b3 = AV_RN32(pixels + 13);
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             va[0] = a0; va[1] = a1; va[2] = a2; va[3] = a3;
             vb[0] = b0; vb[1] = b1; vb[2] = b2; vb[3] = b3;
             va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
@@ -435,7 +435,7 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
 {
     int i;
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
     const ptrdiff_t pref_off = line_size * 2;
     LOCAL_ALIGNED_64(uint32_t, va, [16]);
     LOCAL_ALIGNED_64(uint32_t, vb, [16]);
@@ -451,7 +451,7 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             }
 #endif
             const uint8_t *p1 = pixels + line_size;
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             va[0] = AV_RN32A(pixels);
             va[1] = AV_RN32A(pixels + 4);
             va[2] = AV_RN32A(pixels + 8);
@@ -493,7 +493,7 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             }
 #endif
             const uint8_t *p1 = pixels + line_size;
-#if HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_RND_AVG)
             va[0] = AV_RN32(pixels);
             va[1] = AV_RN32(pixels + 4);
             va[2] = AV_RN32(pixels + 8);
