@@ -200,10 +200,24 @@
  */
 
 /*
- * VPR_ZERO_INIT() — zero VPR0 once; call before SA0 stores.
+ * VPR_ZERO_INIT() — reliably zero VPR0; call before SA0 stores.
+ *
+ * Uses SUMZ(0) to hardware-zero the VSR0 sum register, then MFSUM to
+ * copy the all-zero value into VPR0.  This is safe regardless of the
+ * prior VPR0 contents — unlike the float self-subtract (VPR0 - VPR0)
+ * which produces NaN when any lane already contains NaN.
+ *
+ * Encodings (COP2, rs=19):
+ *   SUMZ  VSR0       = 0x4a60001c   (VSR0 = 0)
+ *   MFSUM VPR0, VSR0 = 0x4a60000f   (VPR0 = VSR0)
  */
 #define VPR_ZERO_INIT() \
-    __asm__ __volatile__(".word 0x4a80000b\n\tsync\n" ::: "memory")
+    __asm__ __volatile__(                   \
+        ".word 0x4a60001c\n\t"  /* SUMZ  */ \
+        "sync\n\t"                          \
+        ".word 0x4a60000f\n\t"  /* MFSUM */ \
+        "sync\n\t"                          \
+        ::: "memory")
 
 /* ------------------------------------------------------------------ */
 /*  CU2 (Coprocessor 2) lazy enablement for XBurst2 MXUv3             */
@@ -231,7 +245,11 @@
  */
 static inline void ff_mxu_ensure_cu2(void)
 {
-    /* VPR0 = VPR0 - VPR0  (COP2 opcode, zeroes VPR0 as side-effect) */
+    /*
+     * VPR0 = VPR0 - VPR0  (COP2 opcode).
+     * The result doesn't matter (may be NaN if VPR0 held NaN) — the
+     * sole purpose is triggering exc_code=11 so the kernel enables CU2.
+     */
     __asm__ __volatile__(".word 0x4a80000b" ::: "memory");
 }
 

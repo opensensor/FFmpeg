@@ -31,17 +31,12 @@ static inline uint8_t clip_uint8(int v)
 
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
 {
-#if HAVE_INLINE_ASM
-    /* Q8AVGR: per-byte (a + b + 1) >> 1, no cross-byte carry. */
-    S32I2M(xr1, a);
-    S32I2M(xr2, b);
-    Q8AVGR(xr0, xr1, xr2);
-    return S32M2I(xr0);
-#else
-    /* Rounded per-byte average: (a + b + 1) >> 1, without cross-byte carries. */
-    const uint32_t xor = a ^ b;
-    return (a & b) + ((xor & 0xFEFEFEFEU) >> 1) + (xor & 0x01010101U);
-#endif
+    /*
+     * Rounded per-byte average: (a + b + 1) >> 1, without cross-byte carries.
+     * Portable bit-manipulation — MXU1 Q8AVGR SIGILLs on XBurst2 (A1/T41).
+     */
+    const uint32_t xor_val = a ^ b;
+    return (a & b) + ((xor_val & 0xFEFEFEFEU) >> 1) + (xor_val & 0x01010101U);
 }
 
 static inline uint32_t pack_u8x4(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)

@@ -24,8 +24,8 @@
  *
  * Optimisations over -Os compiled C:
  *  - Word-sized (32-bit) loads and stores for pixel copy/averaging
- *  - Byte-parallel rounding/truncating average via MXU Q8AVG/Q8AVGR
- *    (fallback to bit-manipulation if inline asm is unavailable)
+ *  - Byte-parallel rounding/truncating average via bit-manipulation
+ *    (MXU1 Q8AVG/Q8AVGR are NOT available on XBurst2 A1/T41)
  *  - Minimised loop overhead with counted loops
  *
  * NOTE: The init path calls ff_mxu_ensure_cu2() before these functions are
@@ -49,15 +49,12 @@ static inline int ptr_is_aligned4(const void *p, ptrdiff_t stride)
  */
 static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
 {
-#if HAVE_INLINE_ASM
-    /* Q8AVGR: per-byte (a + b + 1) >> 1, no cross-byte carry. */
-    S32I2M(xr1, a);
-    S32I2M(xr2, b);
-    Q8AVGR(xr0, xr1, xr2);
-    return S32M2I(xr0);
-#else
+    /*
+     * Rounding byte-parallel average: (a + b + 1) >> 1 per byte.
+     * Equivalent to MXU1 Q8AVGR but uses portable bit-manipulation
+     * since Q8AVGR SIGILLs on XBurst2 (A1/T41).
+     */
     return (a | b) - (((a ^ b) & 0xFEFEFEFEU) >> 1);
-#endif
 }
 
 /**
@@ -66,15 +63,12 @@ static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
  */
 static inline uint32_t no_rnd_avg32(uint32_t a, uint32_t b)
 {
-#if HAVE_INLINE_ASM
-    /* Q8AVG: per-byte (a + b) >> 1, no cross-byte carry. */
-    S32I2M(xr1, a);
-    S32I2M(xr2, b);
-    Q8AVG(xr0, xr1, xr2);
-    return S32M2I(xr0);
-#else
+    /*
+     * Truncating byte-parallel average: (a + b) >> 1 per byte.
+     * Equivalent to MXU1 Q8AVG but uses portable bit-manipulation
+     * since Q8AVG SIGILLs on XBurst2 (A1/T41).
+     */
     return (a & b) + (((a ^ b) & 0xFEFEFEFEU) >> 1);
-#endif
 }
 
 /* ---- put_pixels: straight copy ---- */

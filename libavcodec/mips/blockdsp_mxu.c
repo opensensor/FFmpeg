@@ -28,10 +28,15 @@
  * transfers one 256-bit half of a VPR to/from a 64-byte aligned memory
  * address, so two SA0 operations clear the full 64 bytes.
  *
- * Verified instruction encodings (hardware-tested on XBurst2 T31/T40):
- *   VPR_ZERO(0) = 0x4a80000b  — zeros VPR0 (COP2: VPR0 = VPR0 - VPR0)
+ * Verified instruction encodings (hardware-tested on XBurst2 T41/A1):
+ *   SUMZ  VSR0       = 0x4a60001c  — hardware-zero sum register
+ *   MFSUM VPR0, VSR0 = 0x4a60000f  — copy VSR0 into VPR0 (all zeros)
  *   SA0 low  half (bytes  0-31 of VPR0): 0x710000d5  ($t0 = base)
  *   SA0 high half (bytes 32-63 of VPR0): 0x710102d5  ($t0 = base)
+ *
+ * Note: the earlier approach of VPR_ZERO (VPR0 = VPR0 - VPR0, float
+ * self-subtract, 0x4a80000b) fails when VPR0 contains NaN bit patterns
+ * because NaN - NaN = NaN.  The SUMZ+MFSUM path always produces zeros.
  *
  * Important: only offset values 0 (low half) and 1 (high half) work
  * reliably.  Larger offsets in the SA0 encoding do NOT produce correct
@@ -54,9 +59,10 @@
 /**
  * Zero a single 64-element int16_t DCT coefficient block (128 bytes).
  *
- * Uses VPR_ZERO(0) once to zero VPR0, then two SA0 store pairs to write
- * the 128 bytes.  Falls back to memset when the block is not 64-byte
- * aligned so that the SA0 alignment requirement is always satisfied.
+ * Uses SUMZ+MFSUM to reliably zero VPR0, then two SA0 store pairs to
+ * write the 128 bytes.  Falls back to memset when the block is not
+ * 64-byte aligned so that the SA0 alignment requirement is always
+ * satisfied.
  */
 void ff_clear_block_mxu(int16_t *block)
 {
@@ -74,7 +80,7 @@ void ff_clear_block_mxu(int16_t *block)
 /**
  * Zero six consecutive int16_t DCT coefficient blocks (6 × 128 = 768 bytes).
  *
- * VPR_ZERO(0) is executed once, then 12 SA0 store pairs write the full
+ * SUMZ+MFSUM zeros VPR0 once, then 12 SA0 store pairs write the full
  * 768 bytes.  Called once per macroblock in the H.264/MPEG-2/4 decode path.
  * Falls back to memset when the block pointer is not 64-byte aligned.
  */
