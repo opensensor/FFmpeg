@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
+#include "libavutil/mem_internal.h"
 #include "libavcodec/h264dec.h"
 #include "h264dsp_mips.h"
 #include "mxu.h"
@@ -134,7 +135,6 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LOCAL_ALIGNED_64(int32_t, o1, [16]);
         LOCAL_ALIGNED_64(int32_t, o2, [16]);
         LOCAL_ALIGNED_64(int32_t, o3, [16]);
-        LOCAL_ALIGNED_64(int32_t, vzero, [16]) = { 0 };
         int k;
 
         for (k = 0; k < 16; k++)
@@ -152,7 +152,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(1, r1);
         LA0_VPR_AT(2, r2);
         LA0_VPR_AT(3, r3);
-        LA0_VPR_AT(15, vzero);
+        MXUV3_ZERO_VPR(15);
 
         /* z0 = r0 + r2, z1 = r0 - r2 */
         VPR_ADDUW(4, 0, 2);
@@ -221,7 +221,6 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LOCAL_ALIGNED_64(int32_t, y1, [16]);
         LOCAL_ALIGNED_64(int32_t, y2, [16]);
         LOCAL_ALIGNED_64(int32_t, y3, [16]);
-        LOCAL_ALIGNED_64(int32_t, vzero, [16]) = { 0 };
         int k;
 
         for (k = 0; k < 16; k++)
@@ -238,7 +237,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         LA0_VPR_AT(1, c1);
         LA0_VPR_AT(2, c2);
         LA0_VPR_AT(3, c3);
-        LA0_VPR_AT(15, vzero);
+        MXUV3_ZERO_VPR(15);
 
         /* z0 = c0 + c2, z1 = c0 - c2 */
         VPR_ADDUW(4, 0, 2);

@@ -35,8 +35,19 @@
 #include <stdint.h>
 
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
 #include "hpeldsp_mips.h"
 #include "mxu.h"
+
+#if HAVE_INLINE_ASM
+/* Per-byte mask used by rnd_avg32/no_rnd_avg32 bit-hacks: 0xFE in each byte. */
+static const uint32_t vpr_mask_fefefefe[16] __attribute__((aligned(64))) = {
+    0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU,
+    0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU,
+    0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU,
+    0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU, 0xFEFEFEFEU,
+};
+#endif
 
 /*
  * rnd_avg32 / no_rnd_avg32 are provided by rnd_avg.h (included via
@@ -144,6 +155,11 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+    /* VPR constants/scratch (aligned for LA0/SA0) */
+    LOCAL_ALIGNED_64(uint32_t, va, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vb, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vr, [16]);
+    LA0_VPR_AT(5, vpr_mask_fefefefe);
 #endif
     if (src_aligned) {
         for (i = 0; i < h; i++) {
@@ -153,11 +169,39 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                 PREF_LOAD(block,  pref_off);
                 PREF_STORE(block, pref_off);
             }
-#endif
+
+            /* Compute 4x rnd_avg32(dst, src) in VPR (lanes 0..3). */
+            va[0] = AV_RN32A(block);
+            va[1] = AV_RN32A(block + 4);
+            va[2] = AV_RN32A(block + 8);
+            va[3] = AV_RN32A(block + 12);
+            vb[0] = AV_RN32A(pixels);
+            vb[1] = AV_RN32A(pixels + 4);
+            vb[2] = AV_RN32A(pixels + 8);
+            vb[3] = AV_RN32A(pixels + 12);
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);           /* or  */
+            VPR_AND(3, 0, 1);          /* and */
+            VPR_SUBUW(4, 2, 3);        /* xor = or - and (borrow-free) */
+            VPR_AND(4, 4, 5);          /* xor & 0xFEFEFEFE */
+            VPR_SRLW_IMM(4, 4, 1);     /* >> 1 */
+            VPR_SUBUW(6, 2, 4);        /* rnd_avg32 */
+            SA0_VPR_AT(6, vr);
+
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32A(pixels)));
             AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32A(pixels + 4)));
             AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32A(pixels + 8)));
             AV_WN32A(block + 12, rnd_avg32(AV_RN32A(block + 12), AV_RN32A(pixels + 12)));
+#endif
             block  += line_size;
             pixels += line_size;
         }
@@ -169,11 +213,38 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
                 PREF_LOAD(block,  pref_off);
                 PREF_STORE(block, pref_off);
             }
-#endif
+
+            va[0] = AV_RN32A(block);
+            va[1] = AV_RN32A(block + 4);
+            va[2] = AV_RN32A(block + 8);
+            va[3] = AV_RN32A(block + 12);
+            vb[0] = AV_RN32(pixels);
+            vb[1] = AV_RN32(pixels + 4);
+            vb[2] = AV_RN32(pixels + 8);
+            vb[3] = AV_RN32(pixels + 12);
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);
+            VPR_AND(3, 0, 1);
+            VPR_SUBUW(4, 2, 3);
+            VPR_AND(4, 4, 5);
+            VPR_SRLW_IMM(4, 4, 1);
+            VPR_SUBUW(6, 2, 4);
+            SA0_VPR_AT(6, vr);
+
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(AV_RN32A(block),      AV_RN32(pixels)));
             AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(block + 4),  AV_RN32(pixels + 4)));
             AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(block + 8),  AV_RN32(pixels + 8)));
             AV_WN32A(block + 12, rnd_avg32(AV_RN32A(block + 12), AV_RN32(pixels + 12)));
+#endif
             block  += line_size;
             pixels += line_size;
         }
@@ -229,6 +300,10 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+    LOCAL_ALIGNED_64(uint32_t, va, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vb, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vr, [16]);
+    LA0_VPR_AT(5, vpr_mask_fefefefe);
 #endif
     if (src_aligned) {
         for (i = 0; i < h; i++) {
@@ -242,10 +317,30 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             uint32_t a1 = AV_RN32A(pixels + 4),  b1 = AV_RN32(pixels + 5);
             uint32_t a2 = AV_RN32A(pixels + 8),  b2 = AV_RN32(pixels + 9);
             uint32_t a3 = AV_RN32A(pixels + 12), b3 = AV_RN32(pixels + 13);
+#if HAVE_INLINE_ASM
+            va[0] = a0; va[1] = a1; va[2] = a2; va[3] = a3;
+            vb[0] = b0; vb[1] = b1; vb[2] = b2; vb[3] = b3;
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);
+            VPR_AND(3, 0, 1);
+            VPR_SUBUW(4, 2, 3);
+            VPR_AND(4, 4, 5);
+            VPR_SRLW_IMM(4, 4, 1);
+            VPR_SUBUW(6, 2, 4);
+            SA0_VPR_AT(6, vr);
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(a0, b0));
             AV_WN32A(block + 4,  rnd_avg32(a1, b1));
             AV_WN32A(block + 8,  rnd_avg32(a2, b2));
             AV_WN32A(block + 12, rnd_avg32(a3, b3));
+#endif
             block  += line_size;
             pixels += line_size;
         }
@@ -261,10 +356,30 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             uint32_t a1 = AV_RN32(pixels + 4),  b1 = AV_RN32(pixels + 5);
             uint32_t a2 = AV_RN32(pixels + 8),  b2 = AV_RN32(pixels + 9);
             uint32_t a3 = AV_RN32(pixels + 12), b3 = AV_RN32(pixels + 13);
+#if HAVE_INLINE_ASM
+            va[0] = a0; va[1] = a1; va[2] = a2; va[3] = a3;
+            vb[0] = b0; vb[1] = b1; vb[2] = b2; vb[3] = b3;
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);
+            VPR_AND(3, 0, 1);
+            VPR_SUBUW(4, 2, 3);
+            VPR_AND(4, 4, 5);
+            VPR_SRLW_IMM(4, 4, 1);
+            VPR_SUBUW(6, 2, 4);
+            SA0_VPR_AT(6, vr);
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(a0, b0));
             AV_WN32A(block + 4,  rnd_avg32(a1, b1));
             AV_WN32A(block + 8,  rnd_avg32(a2, b2));
             AV_WN32A(block + 12, rnd_avg32(a3, b3));
+#endif
             block  += line_size;
             pixels += line_size;
         }
@@ -322,6 +437,10 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
     const int src_aligned = ptr_is_aligned4(pixels, line_size);
 #if HAVE_INLINE_ASM
     const ptrdiff_t pref_off = line_size * 2;
+    LOCAL_ALIGNED_64(uint32_t, va, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vb, [16]);
+    LOCAL_ALIGNED_64(uint32_t, vr, [16]);
+    LA0_VPR_AT(5, vpr_mask_fefefefe);
 #endif
     if (src_aligned) {
         for (i = 0; i < h; i++) {
@@ -332,10 +451,36 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             }
 #endif
             const uint8_t *p1 = pixels + line_size;
+#if HAVE_INLINE_ASM
+            va[0] = AV_RN32A(pixels);
+            va[1] = AV_RN32A(pixels + 4);
+            va[2] = AV_RN32A(pixels + 8);
+            va[3] = AV_RN32A(pixels + 12);
+            vb[0] = AV_RN32A(p1);
+            vb[1] = AV_RN32A(p1 + 4);
+            vb[2] = AV_RN32A(p1 + 8);
+            vb[3] = AV_RN32A(p1 + 12);
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);
+            VPR_AND(3, 0, 1);
+            VPR_SUBUW(4, 2, 3);
+            VPR_AND(4, 4, 5);
+            VPR_SRLW_IMM(4, 4, 1);
+            VPR_SUBUW(6, 2, 4);
+            SA0_VPR_AT(6, vr);
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(AV_RN32A(pixels),      AV_RN32A(p1)));
             AV_WN32A(block + 4,  rnd_avg32(AV_RN32A(pixels + 4),  AV_RN32A(p1 + 4)));
             AV_WN32A(block + 8,  rnd_avg32(AV_RN32A(pixels + 8),  AV_RN32A(p1 + 8)));
             AV_WN32A(block + 12, rnd_avg32(AV_RN32A(pixels + 12), AV_RN32A(p1 + 12)));
+#endif
             block  += line_size;
             pixels += line_size;
         }
@@ -348,10 +493,36 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             }
 #endif
             const uint8_t *p1 = pixels + line_size;
+#if HAVE_INLINE_ASM
+            va[0] = AV_RN32(pixels);
+            va[1] = AV_RN32(pixels + 4);
+            va[2] = AV_RN32(pixels + 8);
+            va[3] = AV_RN32(pixels + 12);
+            vb[0] = AV_RN32(p1);
+            vb[1] = AV_RN32(p1 + 4);
+            vb[2] = AV_RN32(p1 + 8);
+            vb[3] = AV_RN32(p1 + 12);
+            va[4] = va[5] = va[6] = va[7] = va[8] = va[9] = va[10] = va[11] = va[12] = va[13] = va[14] = va[15] = 0;
+            vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
+            LA0_VPR_AT(0, va);
+            LA0_VPR_AT(1, vb);
+            VPR_OR(2, 0, 1);
+            VPR_AND(3, 0, 1);
+            VPR_SUBUW(4, 2, 3);
+            VPR_AND(4, 4, 5);
+            VPR_SRLW_IMM(4, 4, 1);
+            VPR_SUBUW(6, 2, 4);
+            SA0_VPR_AT(6, vr);
+            AV_WN32A(block,      vr[0]);
+            AV_WN32A(block + 4,  vr[1]);
+            AV_WN32A(block + 8,  vr[2]);
+            AV_WN32A(block + 12, vr[3]);
+#else
             AV_WN32A(block,      rnd_avg32(AV_RN32(pixels),      AV_RN32(p1)));
             AV_WN32A(block + 4,  rnd_avg32(AV_RN32(pixels + 4),  AV_RN32(p1 + 4)));
             AV_WN32A(block + 8,  rnd_avg32(AV_RN32(pixels + 8),  AV_RN32(p1 + 8)));
             AV_WN32A(block + 12, rnd_avg32(AV_RN32(pixels + 12), AV_RN32(p1 + 12)));
+#endif
             block  += line_size;
             pixels += line_size;
         }
