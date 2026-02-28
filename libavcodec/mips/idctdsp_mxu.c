@@ -23,19 +23,24 @@
  * Ingenic XBurst2 optimised IDCT and pixel clamping functions.
  *
  * Optimisations over -Os compiled C:
- *  - Word-sized loads and stores for pixel clamping
+ *  - MXUv3 VPR MAXSH/MINSH bulk clamping (32 int16 values per VPR op)
+ *  - VPR ADDUH for int16 bias addition (put_signed_pixels_clamped)
+ *  - Word-packed stores (2 per row instead of 8 byte stores)
  *  - Hand-scheduled IDCT butterfly with DC-only shortcut
  *  - Full 8-row unrolling where beneficial
  *  - Branchless uint8 clip for saturating arithmetic
  *
- * These functions are pure MIPS32r2 scalar code — no legacy XBurst1 MXU
- * (XR register) instructions are used.
+ * The pixel clamping functions use 512-bit VPR registers (MXUv3) to clamp
+ * entire IDCT blocks in bulk, then narrow to uint8 with word-packed stores.
+ * The IDCT butterfly is pure MIPS32r2 scalar code.
  */
 
 #include <string.h>
 #include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
+#include "libavutil/mem_internal.h"
 #include "idctdsp_mips.h"
+#include "mxu.h"
 
 /* ---- Pixel clamping functions ---- */
 
@@ -46,11 +51,80 @@ static inline uint8_t clip_uint8(int v)
     return v;
 }
 
+/*
+ * Pack 4 clamped-to-[0,255] int16 values into a uint32 (little-endian).
+ * Caller must ensure each value is already in [0,255].
+ */
+static inline uint32_t pack4_u8(int16_t a, int16_t b, int16_t c, int16_t d)
+{
+    return (uint32_t)(uint8_t)a        | ((uint32_t)(uint8_t)b <<  8) |
+           ((uint32_t)(uint8_t)c << 16) | ((uint32_t)(uint8_t)d << 24);
+}
+
+#if HAVE_INLINE_ASM
+/*
+ * Upper-bound vector for VPR MINSH clamping: 32 × int16 all set to 255.
+ * Must be 64-byte aligned for LA0_VPR_AT.
+ */
+DECLARE_ASM_CONST(64, int16_t, vpr_clamp_255)[32] = {
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+};
+
+/*
+ * Bias vector for signed-to-unsigned conversion: 32 × int16 all set to 128.
+ * Must be 64-byte aligned for LA0_VPR_AT.
+ */
+DECLARE_ASM_CONST(64, int16_t, vpr_bias_128)[32] = {
+    128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128,
+};
+#endif /* HAVE_INLINE_ASM */
+
 void ff_put_pixels_clamped_mxu(const int16_t *block,
                                 uint8_t *restrict pixels,
                                 ptrdiff_t line_size)
 {
     int i;
+#if HAVE_INLINE_ASM
+    /*
+     * VPR fast path: clamp 32 int16 values at a time using
+     * MAXSH(x, 0) + MINSH(x, 255), then narrow to uint8.
+     * Uses a 64-byte-aligned temp buffer for VPR load/store.
+     */
+    LOCAL_ALIGNED_64(int16_t, clamped, [64]);
+
+    memcpy(clamped, block, 128);
+
+    /* VPR0 = all zeros (lower bound) */
+    VPR_ZERO_INIT();
+    /* VPR1 = all 255s (upper bound) */
+    LA0_VPR_AT(1, vpr_clamp_255);
+
+    /* Clamp rows 0-3 (32 int16 = 64 bytes) */
+    LA0_VPR_AT(2, clamped);
+    VPR_MAXSH(2, 2, 0);    /* >= 0   */
+    VPR_MINSH(2, 2, 1);    /* <= 255 */
+    SA0_VPR_AT(2, clamped);
+
+    /* Clamp rows 4-7 (next 64 bytes) */
+    LA0_VPR_AT(2, (uint8_t *)clamped + 64);
+    VPR_MAXSH(2, 2, 0);
+    VPR_MINSH(2, 2, 1);
+    SA0_VPR_AT(2, (uint8_t *)clamped + 64);
+
+    /* Narrow clamped int16 → uint8 with word-packed stores */
+    for (i = 0; i < 8; i++) {
+        const int16_t *row = clamped + i * 8;
+        AV_WN32A(pixels,     pack4_u8(row[0], row[1], row[2], row[3]));
+        AV_WN32A(pixels + 4, pack4_u8(row[4], row[5], row[6], row[7]));
+        pixels += line_size;
+    }
+#else
     for (i = 0; i < 8; i++) {
         pixels[0] = clip_uint8(block[0]);
         pixels[1] = clip_uint8(block[1]);
@@ -63,6 +137,7 @@ void ff_put_pixels_clamped_mxu(const int16_t *block,
         pixels += line_size;
         block  += 8;
     }
+#endif
 }
 
 void ff_put_signed_pixels_clamped_mxu(const int16_t *block,
@@ -70,6 +145,40 @@ void ff_put_signed_pixels_clamped_mxu(const int16_t *block,
                                        ptrdiff_t line_size)
 {
     int i;
+#if HAVE_INLINE_ASM
+    /*
+     * VPR path: add 128 bias then clamp to [0,255].
+     */
+    LOCAL_ALIGNED_64(int16_t, clamped, [64]);
+
+    memcpy(clamped, block, 128);
+
+    /* VPR0 = all zeros, VPR1 = all 255s, VPR3 = all 128s */
+    VPR_ZERO_INIT();
+    LA0_VPR_AT(1, vpr_clamp_255);
+    LA0_VPR_AT(3, vpr_bias_128);
+
+    /* Add 128 bias + clamp rows 0-3 */
+    LA0_VPR_AT(2, clamped);
+    VPR_ADDUH(2, 2, 3);    /* + 128  */
+    VPR_MAXSH(2, 2, 0);    /* >= 0   */
+    VPR_MINSH(2, 2, 1);    /* <= 255 */
+    SA0_VPR_AT(2, clamped);
+
+    /* Add 128 bias + clamp rows 4-7 */
+    LA0_VPR_AT(2, (uint8_t *)clamped + 64);
+    VPR_ADDUH(2, 2, 3);
+    VPR_MAXSH(2, 2, 0);
+    VPR_MINSH(2, 2, 1);
+    SA0_VPR_AT(2, (uint8_t *)clamped + 64);
+
+    for (i = 0; i < 8; i++) {
+        const int16_t *row = clamped + i * 8;
+        AV_WN32A(pixels,     pack4_u8(row[0], row[1], row[2], row[3]));
+        AV_WN32A(pixels + 4, pack4_u8(row[4], row[5], row[6], row[7]));
+        pixels += line_size;
+    }
+#else
     for (i = 0; i < 8; i++) {
         pixels[0] = clip_uint8(block[0] + 128);
         pixels[1] = clip_uint8(block[1] + 128);
@@ -82,12 +191,15 @@ void ff_put_signed_pixels_clamped_mxu(const int16_t *block,
         pixels += line_size;
         block  += 8;
     }
+#endif
 }
 
 /**
  * Add IDCT residuals to pixels with clamping.
  *
- * Uses branchless clip_uint8 for per-pixel saturation.
+ * Uses word-sized loads/stores with branchless clip for per-pixel
+ * saturation.  Processes 4 pixels per word to reduce store pressure
+ * on the in-order XBurst2 pipeline.
  */
 void ff_add_pixels_clamped_mxu(const int16_t *block,
                                 uint8_t *restrict pixels,
@@ -95,14 +207,18 @@ void ff_add_pixels_clamped_mxu(const int16_t *block,
 {
     int i;
     for (i = 0; i < 8; i++) {
-        pixels[0] = clip_uint8(pixels[0] + block[0]);
-        pixels[1] = clip_uint8(pixels[1] + block[1]);
-        pixels[2] = clip_uint8(pixels[2] + block[2]);
-        pixels[3] = clip_uint8(pixels[3] + block[3]);
-        pixels[4] = clip_uint8(pixels[4] + block[4]);
-        pixels[5] = clip_uint8(pixels[5] + block[5]);
-        pixels[6] = clip_uint8(pixels[6] + block[6]);
-        pixels[7] = clip_uint8(pixels[7] + block[7]);
+        uint32_t p0 = AV_RN32A(pixels);
+        uint32_t p1 = AV_RN32A(pixels + 4);
+        AV_WN32A(pixels,
+            clip_uint8(( p0        & 0xFF) + block[0])        |
+            (clip_uint8(((p0 >>  8) & 0xFF) + block[1]) <<  8) |
+            (clip_uint8(((p0 >> 16) & 0xFF) + block[2]) << 16) |
+            (clip_uint8(( p0 >> 24)         + block[3]) << 24));
+        AV_WN32A(pixels + 4,
+            clip_uint8(( p1        & 0xFF) + block[4])        |
+            (clip_uint8(((p1 >>  8) & 0xFF) + block[5]) <<  8) |
+            (clip_uint8(((p1 >> 16) & 0xFF) + block[6]) << 16) |
+            (clip_uint8(( p1 >> 24)         + block[7]) << 24));
         pixels += line_size;
         block  += 8;
     }

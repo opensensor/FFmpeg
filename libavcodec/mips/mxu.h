@@ -220,6 +220,147 @@
         ::: "memory")
 
 /* ------------------------------------------------------------------ */
+/*  MXUv3 COP2 instruction encoding helper                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * MXUV3_COP2_INST — build a 32-bit COP2 instruction word.
+ * op=0x12 (COP2), fields: rs[25:21] rt[20:16] rd[15:11] sa[10:6] fn[5:0]
+ */
+#define MXUV3_COP2_INST(rs, rt, rd, sa, fn) \
+    (0x48000000 | ((rs) << 21) | ((rt) << 16) | \
+     ((rd) << 11) | ((sa) << 6) | (fn))
+
+/* ------------------------------------------------------------------ */
+/*  LA0 / SA0 — VPR 512-bit load / store (64-byte aligned)            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * LA0_VPR_AT(vpr, ptr) — load  64 bytes from aligned ptr → VPR[vpr]
+ * SA0_VPR_AT(vpr, ptr) — store 64 bytes from VPR[vpr] → aligned ptr
+ *
+ * Two 256-bit halves are transferred (low then high).
+ * ptr must be 64-byte aligned.  Uses $t0 as base address register.
+ *
+ * LA0 encoding: 0x71001811 | offset<<16 | half<<14 | vpr<<6
+ * SA0 encoding: 0x710000d5 | offset<<16 | vpr<<11  | half<<9
+ */
+#define LA0_VPR_AT(vpr, ptr) do {                                       \
+    register const void *_base __asm__("t0") = (const void *)(ptr);     \
+    __asm__ __volatile__(                                                \
+        ".set push\n\t"                                                  \
+        ".set noreorder\n\t"                                             \
+        ".word %1\n\t"                                                   \
+        ".word %2\n\t"                                                   \
+        ".set pop\n\t"                                                   \
+        :: "r"(_base),                                                   \
+           "i"(0x71001811 | (0 << 16) | (0 << 14) | ((vpr) << 6)),     \
+           "i"(0x71001811 | (1 << 16) | (1 << 14) | ((vpr) << 6))     \
+        : "memory"                                                       \
+    );                                                                   \
+} while (0)
+
+#define SA0_VPR_AT(vpr, ptr) do {                                       \
+    register void *_base __asm__("t0") = (void *)(ptr);                 \
+    __asm__ __volatile__(                                                \
+        ".set push\n\t"                                                  \
+        ".set noreorder\n\t"                                             \
+        ".word %1\n\t"                                                   \
+        ".word %2\n\t"                                                   \
+        ".set pop\n\t"                                                   \
+        :: "r"(_base),                                                   \
+           "i"(0x710000d5 | (0 << 16) | ((vpr) << 11) | (0 << 9)),    \
+           "i"(0x710000d5 | (1 << 16) | ((vpr) << 11) | (1 << 9))    \
+        : "memory"                                                       \
+    );                                                                   \
+} while (0)
+
+/* ------------------------------------------------------------------ */
+/*  MXUV3_ZERO_VPR — reliable zero for any VPR register               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Uses SUMZ(0) to hardware-zero VSR0, then MFSUM(vpr, 0) to copy
+ * the all-zero value.  Safe even when VPR contains NaN bit patterns.
+ */
+#define MXUV3_ZERO_VPR(vpr)                                            \
+    __asm__ __volatile__(                                               \
+        ".word %0\n\t"  /* SUMZ(0): VSR0 = 0          */              \
+        "sync\n\t"                                                      \
+        ".word %1\n\t"  /* MFSUM(vpr, 0): VPR = VSR0  */              \
+        "sync\n\t"                                                      \
+        :: "i"(MXUV3_COP2_INST(19, 0, 0, 0, 0x1c)),                   \
+           "i"(MXUV3_COP2_INST(19, 0, 0, (vpr), 0x0f))               \
+        : "memory")
+
+/* ------------------------------------------------------------------ */
+/*  VPR integer min/max (rs=16, hardware-probed on A1/T41)             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * VPR[vrd] = max/min(VPR[vrs], VPR[vrp]) element-wise.
+ * 3-operand form.
+ *
+ * fn encoding (low 6 bits of COP2):
+ *   MAXSH (signed halfword): 0x1D    MINSH: 0x15
+ *   MAXSW (signed word):     0x1E    MINSW: 0x16
+ *   MAXUB (unsigned byte):   0x08    MINUB: 0x00
+ */
+#define VPR_MAXSH(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1D)) : "memory")
+
+#define VPR_MINSH(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x15)) : "memory")
+
+#define VPR_MAXSW(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x1E)) : "memory")
+
+#define VPR_MINSW(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x16)) : "memory")
+
+/* ------------------------------------------------------------------ */
+/*  VPR integer add/sub (rs=20, hardware-probed on A1/T41)             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * VPR[vrd] = VPR[vrs] +/- VPR[vrp]  (3-operand, wrapping)
+ * fn=1: ADDUH (32 x uint16 add)    fn=9:  SUBUH (32 x uint16 sub)
+ * fn=0: ADDUB (64 x uint8 add)     fn=8:  SUBUB (64 x uint8 sub)
+ * fn=2: ADDUW (16 x uint32 add)    fn=10: SUBUW (16 x uint32 sub)
+ */
+#define VPR_ADDUH(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 1)) : "memory")
+
+#define VPR_SUBUH(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 9)) : "memory")
+
+#define VPR_ADDUB(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 0)) : "memory")
+
+#define VPR_SUBUB(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 8)) : "memory")
+
+/* ------------------------------------------------------------------ */
+/*  VPR bitwise logic (rs=16, hardware-probed on A1/T41)               */
+/* ------------------------------------------------------------------ */
+
+#define VPR_AND(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x04)) : "memory")
+
+#define VPR_OR(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x0C)) : "memory")
+
+/* ------------------------------------------------------------------ */
 /*  CU2 (Coprocessor 2) lazy enablement for XBurst2 MXUv3             */
 /* ------------------------------------------------------------------ */
 
