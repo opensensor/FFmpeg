@@ -38,37 +38,16 @@
 #include "hpeldsp_mips.h"
 #include "mxu.h"
 
+/*
+ * rnd_avg32 / no_rnd_avg32 are provided by rnd_avg.h (included via
+ * hpeldsp_mips.h → bit_depth_template.c).  They use portable
+ * bit-manipulation which is equivalent to MXU1 Q8AVGR / Q8AVG
+ * (the MXU1 instructions SIGILL on XBurst2 A1/T41).
+ */
+
 static inline int ptr_is_aligned4(const void *p, ptrdiff_t stride)
 {
     return ((((uintptr_t)p) | (uintptr_t)stride) & 3) == 0;
-}
-
-/**
- * Byte-parallel rounding average of 4 packed bytes.
- *   result[i] = (a[i] + b[i] + 1) >> 1
- */
-static inline uint32_t rnd_avg32(uint32_t a, uint32_t b)
-{
-    /*
-     * Rounding byte-parallel average: (a + b + 1) >> 1 per byte.
-     * Equivalent to MXU1 Q8AVGR but uses portable bit-manipulation
-     * since Q8AVGR SIGILLs on XBurst2 (A1/T41).
-     */
-    return (a | b) - (((a ^ b) & 0xFEFEFEFEU) >> 1);
-}
-
-/**
- * Byte-parallel truncating average of 4 packed bytes.
- *   result[i] = (a[i] + b[i]) >> 1
- */
-static inline uint32_t no_rnd_avg32(uint32_t a, uint32_t b)
-{
-    /*
-     * Truncating byte-parallel average: (a + b) >> 1 per byte.
-     * Equivalent to MXU1 Q8AVG but uses portable bit-manipulation
-     * since Q8AVG SIGILLs on XBurst2 (A1/T41).
-     */
-    return (a & b) + (((a ^ b) & 0xFEFEFEFEU) >> 1);
 }
 
 /* ---- put_pixels: straight copy ---- */
