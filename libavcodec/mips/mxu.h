@@ -361,6 +361,48 @@
         "i"(MXUV3_COP2_INST(16, vrs, vrp, vrd, 0x0C)) : "memory")
 
 /* ------------------------------------------------------------------ */
+/*  VPR shift (rs=21 immediate, rs=17 variable — probed on A1/T41)     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Immediate shift: VPR[sa] = VPR[rt] << rd   (rd = immediate shift amount)
+ *   rs=21, fn=33: SLL (shift left logical)
+ *   rs=21, fn=49: SRL (shift right logical)
+ *   rs=21, fn=50: SRL (shift right logical, same as fn=49)
+ *
+ * Encoding: COP2 | rs=21 | rt=src_vpr | rd=shift_amt | sa=dst_vpr | fn
+ *
+ * NOTE: rd field is the SHIFT AMOUNT (0-31), NOT a VPR register number.
+ */
+#define VPR_SLLW_IMM(vrd, vrs, amt) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 33)) : "memory")
+
+#define VPR_SRLW_IMM(vrd, vrs, amt) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(21, vrs, amt, vrd, 50)) : "memory")
+
+/*
+ * Variable shift: VPR[sa] = VPR[rt] << VPR[rd]   (per-element)
+ *   rs=17, fn=34: SLL halfword (32 x int16, each shifted by VPR[rd] element)
+ *   rs=17, fn=33: SLL word (16 x int32, verified for unsigned values)
+ *   rs=17, fn=50: SRL word (16 x uint32, logical right shift)
+ *
+ * Encoding: COP2 | rs=17 | rt=src_vpr | rd=amt_vpr | sa=dst_vpr | fn
+ */
+#define VPR_SLLH_VAR(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 34)) : "memory")
+
+#define VPR_SLLW_VAR(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 33)) : "memory")
+
+#define VPR_SRLW_VAR(vrd, vrs, vramt) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(17, vrs, vramt, vrd, 50)) : "memory")
+
+/* ------------------------------------------------------------------ */
 /*  CU2 (Coprocessor 2) lazy enablement for XBurst2 MXUv3             */
 /* ------------------------------------------------------------------ */
 
