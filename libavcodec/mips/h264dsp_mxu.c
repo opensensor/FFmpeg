@@ -52,10 +52,27 @@ static inline uint8_t clip_uint8(int v)
 
 /* ---- DC-only 4x4 IDCT add (most common case) ---- */
 
+/*
+ * Helper: add DC value to 4 packed uint8 bytes with clamping.
+ * Reads a word, adds dc to each byte, clamps to [0,255], writes word.
+ * Reduces 4 byte loads + 4 byte stores to 1 word load + 1 word store.
+ */
+static inline void dc_add_word4(uint8_t *dst, int dc)
+{
+    uint32_t w = AV_RN32A(dst);
+    AV_WN32A(dst,
+        clip_uint8(( w        & 0xFF) + dc)        |
+        (clip_uint8(((w >>  8) & 0xFF) + dc) <<  8) |
+        (clip_uint8(((w >> 16) & 0xFF) + dc) << 16) |
+        (clip_uint8(( w >> 24)         + dc) << 24));
+}
+
 /**
- * DC-only 4x4 IDCT add using scalar clip_uint8.
+ * DC-only 4x4 IDCT add — word-packed loads/stores.
  *
- * Processes 4 pixels per row with branchless clamping to [0, 255].
+ * One word load + add + clip + word store per row (was 4 byte loads
+ * + 4 byte stores).  This is the most frequently called IDCT path
+ * in H.264 decoding since most blocks are DC-only.
  */
 void ff_h264_idct_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
@@ -65,30 +82,19 @@ void ff_h264_idct_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     if (dc == 0)
         return;
 
-    /* Two rows per iteration — halves loop overhead */
-    dst[0] = clip_uint8(dst[0] + dc);
-    dst[1] = clip_uint8(dst[1] + dc);
-    dst[2] = clip_uint8(dst[2] + dc);
-    dst[3] = clip_uint8(dst[3] + dc);
-    dst += stride;
-    dst[0] = clip_uint8(dst[0] + dc);
-    dst[1] = clip_uint8(dst[1] + dc);
-    dst[2] = clip_uint8(dst[2] + dc);
-    dst[3] = clip_uint8(dst[3] + dc);
-    dst += stride;
-    dst[0] = clip_uint8(dst[0] + dc);
-    dst[1] = clip_uint8(dst[1] + dc);
-    dst[2] = clip_uint8(dst[2] + dc);
-    dst[3] = clip_uint8(dst[3] + dc);
-    dst += stride;
-    dst[0] = clip_uint8(dst[0] + dc);
-    dst[1] = clip_uint8(dst[1] + dc);
-    dst[2] = clip_uint8(dst[2] + dc);
-    dst[3] = clip_uint8(dst[3] + dc);
+    dc_add_word4(dst, dc); dst += stride;
+    dc_add_word4(dst, dc); dst += stride;
+    dc_add_word4(dst, dc); dst += stride;
+    dc_add_word4(dst, dc);
 }
 
 /* ---- DC-only 8x8 IDCT add ---- */
 
+/**
+ * DC-only 8x8 IDCT add — word-packed loads/stores.
+ *
+ * Two word ops per row (8 pixels = 2 × 4-byte words).
+ */
 void ff_h264_idct8_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
@@ -98,25 +104,9 @@ void ff_h264_idct8_dc_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     if (dc == 0)
         return;
 
-    /* Fully unrolled — two rows per iteration, 4 iterations */
-    for (i = 0; i < 4; i++) {
-        dst[0] = clip_uint8(dst[0] + dc);
-        dst[1] = clip_uint8(dst[1] + dc);
-        dst[2] = clip_uint8(dst[2] + dc);
-        dst[3] = clip_uint8(dst[3] + dc);
-        dst[4] = clip_uint8(dst[4] + dc);
-        dst[5] = clip_uint8(dst[5] + dc);
-        dst[6] = clip_uint8(dst[6] + dc);
-        dst[7] = clip_uint8(dst[7] + dc);
-        dst += stride;
-        dst[0] = clip_uint8(dst[0] + dc);
-        dst[1] = clip_uint8(dst[1] + dc);
-        dst[2] = clip_uint8(dst[2] + dc);
-        dst[3] = clip_uint8(dst[3] + dc);
-        dst[4] = clip_uint8(dst[4] + dc);
-        dst[5] = clip_uint8(dst[5] + dc);
-        dst[6] = clip_uint8(dst[6] + dc);
-        dst[7] = clip_uint8(dst[7] + dc);
+    for (i = 0; i < 8; i++) {
+        dc_add_word4(dst,     dc);
+        dc_add_word4(dst + 4, dc);
         dst += stride;
     }
 }
@@ -142,17 +132,19 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i + 4*3] = z0 - z3;
     }
 
-    /* Row pass + add to destination + clip */
+    /* Row pass + add to destination + clip (word-packed store) */
     for (i = 0; i < 4; i++) {
         const unsigned int z0 =  block[0 + 4*i]     +  (unsigned int)block[2 + 4*i];
         const unsigned int z1 =  block[0 + 4*i]     -  (unsigned int)block[2 + 4*i];
         const unsigned int z2 = (block[1 + 4*i]>>1) -  (unsigned int)block[3 + 4*i];
         const unsigned int z3 =  block[1 + 4*i]     + (unsigned int)(block[3 + 4*i]>>1);
-
-        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((int)(z0 + z3) >> 6));
-        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((int)(z1 + z2) >> 6));
-        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((int)(z1 - z2) >> 6));
-        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((int)(z0 - z3) >> 6));
+        uint8_t *row = dst + i * stride;
+        uint32_t p = AV_RN32A(row);
+        AV_WN32A(row,
+            clip_uint8(( p        & 0xFF) + ((int)(z0 + z3) >> 6))        |
+            (clip_uint8(((p >>  8) & 0xFF) + ((int)(z1 + z2) >> 6)) <<  8) |
+            (clip_uint8(((p >> 16) & 0xFF) + ((int)(z1 - z2) >> 6)) << 16) |
+            (clip_uint8(( p >> 24)         + ((int)(z0 - z3) >> 6)) << 24));
     }
 
     memset(block, 0, 16 * sizeof(int16_t));
@@ -220,14 +212,21 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         const unsigned b5 = (a3>>2) - (unsigned)a5;
         const unsigned b7 =  (unsigned)a7 - (a1>>2);
 
-        dst[i*stride + 0] = clip_uint8(dst[i*stride + 0] + ((int)(b0 + b7) >> 6));
-        dst[i*stride + 1] = clip_uint8(dst[i*stride + 1] + ((int)(b2 + b5) >> 6));
-        dst[i*stride + 2] = clip_uint8(dst[i*stride + 2] + ((int)(b4 + b3) >> 6));
-        dst[i*stride + 3] = clip_uint8(dst[i*stride + 3] + ((int)(b6 + b1) >> 6));
-        dst[i*stride + 4] = clip_uint8(dst[i*stride + 4] + ((int)(b6 - b1) >> 6));
-        dst[i*stride + 5] = clip_uint8(dst[i*stride + 5] + ((int)(b4 - b3) >> 6));
-        dst[i*stride + 6] = clip_uint8(dst[i*stride + 6] + ((int)(b2 - b5) >> 6));
-        dst[i*stride + 7] = clip_uint8(dst[i*stride + 7] + ((int)(b0 - b7) >> 6));
+        {
+            uint8_t *row = dst + i * stride;
+            uint32_t p0 = AV_RN32A(row);
+            uint32_t p1 = AV_RN32A(row + 4);
+            AV_WN32A(row,
+                clip_uint8(( p0        & 0xFF) + ((int)(b0 + b7) >> 6))        |
+                (clip_uint8(((p0 >>  8) & 0xFF) + ((int)(b2 + b5) >> 6)) <<  8) |
+                (clip_uint8(((p0 >> 16) & 0xFF) + ((int)(b4 + b3) >> 6)) << 16) |
+                (clip_uint8(( p0 >> 24)         + ((int)(b6 + b1) >> 6)) << 24));
+            AV_WN32A(row + 4,
+                clip_uint8(( p1        & 0xFF) + ((int)(b6 - b1) >> 6))        |
+                (clip_uint8(((p1 >>  8) & 0xFF) + ((int)(b4 - b3) >> 6)) <<  8) |
+                (clip_uint8(((p1 >> 16) & 0xFF) + ((int)(b2 - b5) >> 6)) << 16) |
+                (clip_uint8(( p1 >> 24)         + ((int)(b0 - b7) >> 6)) << 24));
+        }
     }
 
     memset(block, 0, 64 * sizeof(int16_t));
