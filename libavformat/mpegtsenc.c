@@ -39,6 +39,7 @@
 #include "avformat.h"
 #include "avio_internal.h"
 #include "internal.h"
+#include "nal.h"
 #include "mpegts.h"
 #include "mux.h"
 
@@ -1866,6 +1867,57 @@ static uint8_t *h26x_prefix_aud(const uint8_t *aud, const int aud_size,
 #define H264_NAL_TYPE(state) (state & 0x1f)
 #define HEVC_NAL_TYPE(state) ((state & 0x7e) >> 1)
 #define VVC_NAL_TYPE(state)  ((state >> 11) & 0x1f)
+
+static av_always_inline const uint8_t *ts_find_next_h264_nal_payload(const uint8_t *p,
+                                                                     const uint8_t *end,
+                                                                     int *nal_type,
+                                                                     const uint8_t **sc3)
+{
+    const uint8_t *sc = ff_nal_find_startcode(p, end);
+    if (sc >= end || end - sc < 4) {
+        *nal_type = -1;
+        if (sc3)
+            *sc3 = end;
+        return end;
+    }
+
+    const int sc_len = (sc[2] == 1) ? 3 : 4;
+    const uint8_t *nal = sc + sc_len;
+    if (nal >= end) {
+        *nal_type = -1;
+        if (sc3)
+            *sc3 = end;
+        return end;
+    }
+
+    *nal_type = nal[0] & 0x1f;
+    if (sc3)
+        *sc3 = nal - 3; /* start of the 0x000001 start code */
+
+    return nal + 1;
+}
+
+static av_always_inline const uint8_t *ts_find_next_hevc_nal_payload(const uint8_t *p,
+                                                                     const uint8_t *end,
+                                                                     int *nal_type)
+{
+    const uint8_t *sc = ff_nal_find_startcode(p, end);
+    if (sc >= end || end - sc < 5) {
+        *nal_type = -1;
+        return end;
+    }
+
+    const int sc_len = (sc[2] == 1) ? 3 : 4;
+    const uint8_t *nal = sc + sc_len;
+    if (nal + 2 > end) {
+        *nal_type = -1;
+        return end;
+    }
+
+    /* HEVC: nal_unit_type is in the first header byte. */
+    *nal_type = (nal[0] & 0x7e) >> 1;
+    return nal + 2;
+}
 static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st = s->streams[pkt->stream_index];
@@ -1910,7 +1962,6 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
         const uint8_t *p = buf, *buf_end = p + size;
         const uint8_t *found_aud = NULL, *found_aud_end = NULL;
         int nal_type;
-        uint32_t state = -1;
         int extradd = (pkt->flags & AV_PKT_FLAG_KEY) ? st->codecpar->extradata_size : 0;
         int ret = ff_check_h264_startcode(s, st, pkt);
         if (ret < 0)
@@ -1923,13 +1974,15 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
          * IDR pictures are also prefixed with SPS and PPS. SPS and PPS
          * are assumed to be available in 'extradata' if not found in-band. */
         do {
-            p = avpriv_find_start_code(p, buf_end, &state);
-            nal_type = H264_NAL_TYPE(state);
+            const uint8_t *sc3 = NULL;
+            p = ts_find_next_h264_nal_payload(p, buf_end, &nal_type, &sc3);
+            if (p >= buf_end)
+                break;
             av_log(s, AV_LOG_TRACE, "nal %"PRId32"\n", nal_type);
             if (nal_type == H264_NAL_SPS)
                 extradd = 0;
             if (nal_type == H264_NAL_AUD) {
-                found_aud = p - 4;     // start of the 0x000001 start code.
+                found_aud = sc3;
                 found_aud_end = p + 1; // first byte past the AUD.
                 if (found_aud < buf)
                     found_aud = buf;
@@ -2006,7 +2059,6 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
         }
     } else if (st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
         const uint8_t *p = buf, *buf_end = p + size;
-        uint32_t state = -1;
         int nal_type;
         int extradd = (pkt->flags & AV_PKT_FLAG_KEY) ? st->codecpar->extradata_size : 0;
         int ret = check_h26x_startcode(s, st, pkt, "hevc");
@@ -2017,8 +2069,9 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
             extradd = 0;
 
         do {
-            p = avpriv_find_start_code(p, buf_end, &state);
-            nal_type = HEVC_NAL_TYPE(state);
+            p = ts_find_next_hevc_nal_payload(p, buf_end, &nal_type);
+            if (p >= buf_end)
+                break;
             av_log(s, AV_LOG_TRACE, "nal %"PRId32"\n", nal_type);
             if (nal_type == HEVC_NAL_VPS)
                 extradd = 0;

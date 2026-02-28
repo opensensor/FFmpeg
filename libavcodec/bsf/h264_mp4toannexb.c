@@ -308,6 +308,68 @@ static int h264_mp4toannexb_filter(AVBSFContext *ctx, AVPacket *opkt)
         return 0;
     }
 
+    /* Fast-path for the common MP4/AVCC case:
+     * - 4-byte length prefixes (length_size == 4)
+     * - non-key packets (no SPS/PPS insertion logic)
+     *
+     * For this case, the output size equals the input size (4-byte length
+     * prefix -> 4-byte AnnexB start code), so we can convert in a single pass
+     * without the count/copy two-pass machinery.
+     */
+    if (s->length_size == 4 && !(in->flags & AV_PKT_FLAG_KEY)) {
+        const uint8_t *p = in->data;
+        const uint8_t *end = in->data + in->size;
+
+        ret = av_new_packet(opkt, in->size);
+        if (ret < 0)
+            goto fail;
+        out = opkt->data;
+
+        while (p < end) {
+            uint32_t nal_size;
+
+            if (end - p < 4) {
+                ret = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+            nal_size = AV_RB32(p);
+            p += 4;
+
+            if ((int64_t)nal_size > end - p) {
+                ret = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+
+            if (!nal_size)
+                continue;
+
+            unit_type = p[0] & 0x1f;
+            if (unit_type == H264_NAL_SPS || unit_type == H264_NAL_PPS ||
+                unit_type == H264_NAL_SEI || unit_type == H264_NAL_IDR_SLICE) {
+                /* Rare: fall back to the full path to preserve SPS/PPS handling. */
+                av_packet_unref(opkt);
+                goto slow_path;
+            }
+
+            AV_WB32(out, 1);
+            out += 4;
+            memcpy(out, p, nal_size);
+            out += nal_size;
+            p   += nal_size;
+        }
+
+        av_assert1(out == opkt->data + opkt->size);
+
+        ret = av_packet_copy_props(opkt, in);
+        if (ret < 0)
+            goto fail;
+
+        av_packet_free(&in);
+        return 0;
+    }
+
+slow_path:
+
     buf_end  = in->data + in->size;
     ret = h264_mp4toannexb_filter_ps(s, in->data, buf_end);
     if (ret < 0)

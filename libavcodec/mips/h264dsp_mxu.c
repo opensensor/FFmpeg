@@ -121,7 +121,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     block[0] += 1 << 5;
 
     /* Column pass */
-#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT4)
+#if HAVE_INLINE_ASM && defined(MXU_ENABLE_VPR_IDCT4) && !defined(MXU_DISABLE_VPR_IDCT4)
     {
         /*
          * Vectorize the 4 independent columns by treating the 4 columns as
@@ -195,7 +195,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
             block[k + 3 * 4] = (int16_t)o3[k];
         }
     }
-#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
+#else /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT4 && !MXU_DISABLE_VPR_IDCT4 */
     for (i = 0; i < 4; i++) {
         const unsigned int z0 =  block[i + 4*0]     +  (unsigned)block[i + 4*2];
         const unsigned int z1 =  block[i + 4*0]     -  (unsigned)block[i + 4*2];
@@ -207,11 +207,11 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i + 4*2] = z1 - z2;
         block[i + 4*3] = z0 - z3;
     }
-#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
+#endif /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT4 && !MXU_DISABLE_VPR_IDCT4 */
 
     /* Row pass + add to destination + clip (word-packed store) */
     {
-#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT4)
+#if HAVE_INLINE_ASM && defined(MXU_ENABLE_VPR_IDCT4) && !defined(MXU_DISABLE_VPR_IDCT4)
         /* Vectorize 4 independent rows (lanes=rows) and feed scalar clip/store. */
         LOCAL_ALIGNED_64(int32_t, c0, [16]);
         LOCAL_ALIGNED_64(int32_t, c1, [16]);
@@ -281,7 +281,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                 (clip_uint8(((p >> 16) & 0xFF) + ((int)y2[i] >> 6)) << 16) |
                 (clip_uint8(( p >> 24)         + ((int)y3[i] >> 6)) << 24));
         }
-#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
+#else /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT4 && !MXU_DISABLE_VPR_IDCT4 */
         for (i = 0; i < 4; i++) {
             const unsigned int z0 =  block[0 + 4*i]     +  (unsigned int)block[2 + 4*i];
             const unsigned int z1 =  block[0 + 4*i]     -  (unsigned int)block[2 + 4*i];
@@ -295,7 +295,7 @@ void ff_h264_idct_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                 (clip_uint8(((p >> 16) & 0xFF) + ((int)(z1 - z2) >> 6)) << 16) |
                 (clip_uint8(( p >> 24)         + ((int)(z0 - z3) >> 6)) << 24));
         }
-#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT4 */
+#endif /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT4 && !MXU_DISABLE_VPR_IDCT4 */
     }
 
     memset(block, 0, 16 * sizeof(int16_t));
@@ -310,7 +310,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
     block[0] += 32;
 
     /* Column pass */
-#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT8)
+#if HAVE_INLINE_ASM && defined(MXU_ENABLE_VPR_IDCT8) && !defined(MXU_DISABLE_VPR_IDCT8)
     {
         /* Lanes 0..7 = columns 0..7; process all 8 columns in parallel. */
         LOCAL_ALIGNED_64(int32_t, r0, [16]);
@@ -462,7 +462,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 #undef VPR_SRAW1
 #undef VPR_SRAW2
     }
-#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
+#else /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT8 && !MXU_DISABLE_VPR_IDCT8 */
     for (i = 0; i < 8; i++) {
         const unsigned int a0 =  block[i+0*8] + (unsigned)block[i+4*8];
         const unsigned int a2 =  block[i+0*8] - (unsigned)block[i+4*8];
@@ -493,11 +493,11 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
         block[i+3*8] = b6 + b1;
         block[i+4*8] = b6 - b1;
     }
-#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
+#endif /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT8 && !MXU_DISABLE_VPR_IDCT8 */
 
     /* Row pass + add to destination + clip */
     {
-#if HAVE_INLINE_ASM && !defined(MXU_DISABLE_VPR_IDCT8)
+#if HAVE_INLINE_ASM && defined(MXU_ENABLE_VPR_IDCT8) && !defined(MXU_DISABLE_VPR_IDCT8)
         /* Lanes 0..7 = rows 0..7; process all 8 rows in parallel. */
         LOCAL_ALIGNED_64(int32_t, c0, [16]);
         LOCAL_ALIGNED_64(int32_t, c1, [16]);
@@ -647,7 +647,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
 
 #undef VPR_SRAW1
 #undef VPR_SRAW2
-#else /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
+#else /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT8 && !MXU_DISABLE_VPR_IDCT8 */
         for (i = 0; i < 8; i++) {
             const unsigned a0 =  block[0+i*8] + (unsigned)block[4+i*8];
             const unsigned a2 =  block[0+i*8] - (unsigned)block[4+i*8];
@@ -685,7 +685,7 @@ void ff_h264_idct8_add_8_mxu(uint8_t *dst, int16_t *block, int stride)
                     (clip_uint8(( p1 >> 24)         + ((int)(b0 - b7) >> 6)) << 24));
             }
         }
-#endif /* HAVE_INLINE_ASM && !MXU_DISABLE_VPR_IDCT8 */
+#endif /* HAVE_INLINE_ASM && MXU_ENABLE_VPR_IDCT8 && !MXU_DISABLE_VPR_IDCT8 */
     }
 
     memset(block, 0, 64 * sizeof(int16_t));

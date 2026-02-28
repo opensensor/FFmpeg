@@ -184,12 +184,12 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);           /* or  */
-            VPR_AND(3, 0, 1);          /* and */
-            VPR_SUBUW(4, 2, 3);        /* xor = or - and (borrow-free) */
-            VPR_AND(4, 4, 5);          /* xor & 0xFEFEFEFE */
-            VPR_SRLW_IMM(4, 4, 1);     /* >> 1 */
-            VPR_SUBUW(6, 2, 4);        /* rnd_avg32 */
+	        VPR_OR_NS(2, 0, 1);        /* or  */
+	        VPR_AND_NS(3, 0, 1);       /* and */
+	        VPR_SUBUW_NS(4, 2, 3);     /* xor = or - and (borrow-free) */
+	        VPR_AND_NS(4, 4, 5);       /* xor & 0xFEFEFEFE */
+	        VPR_SRLW_IMM_NS(4, 4, 1);  /* >> 1 */
+	        VPR_SUBUW_NS(6, 2, 4);     /* rnd_avg32 */
             SA0_VPR_AT(6, vr);
 
             AV_WN32A(block,      vr[0]);
@@ -227,12 +227,12 @@ void ff_avg_pixels16_mxu(uint8_t *block, const uint8_t *pixels,
 
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);
-            VPR_AND(3, 0, 1);
-            VPR_SUBUW(4, 2, 3);
-            VPR_AND(4, 4, 5);
-            VPR_SRLW_IMM(4, 4, 1);
-            VPR_SUBUW(6, 2, 4);
+	        VPR_OR_NS(2, 0, 1);
+	        VPR_AND_NS(3, 0, 1);
+	        VPR_SUBUW_NS(4, 2, 3);
+	        VPR_AND_NS(4, 4, 5);
+	        VPR_SRLW_IMM_NS(4, 4, 1);
+	        VPR_SUBUW_NS(6, 2, 4);
             SA0_VPR_AT(6, vr);
 
             AV_WN32A(block,      vr[0]);
@@ -324,12 +324,12 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);
-            VPR_AND(3, 0, 1);
-            VPR_SUBUW(4, 2, 3);
-            VPR_AND(4, 4, 5);
-            VPR_SRLW_IMM(4, 4, 1);
-            VPR_SUBUW(6, 2, 4);
+	        VPR_OR_NS(2, 0, 1);
+	        VPR_AND_NS(3, 0, 1);
+	        VPR_SUBUW_NS(4, 2, 3);
+	        VPR_AND_NS(4, 4, 5);
+	        VPR_SRLW_IMM_NS(4, 4, 1);
+	        VPR_SUBUW_NS(6, 2, 4);
             SA0_VPR_AT(6, vr);
             AV_WN32A(block,      vr[0]);
             AV_WN32A(block + 4,  vr[1]);
@@ -363,12 +363,12 @@ void ff_put_pixels16_x2_mxu(uint8_t *block, const uint8_t *pixels,
             vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);
-            VPR_AND(3, 0, 1);
-            VPR_SUBUW(4, 2, 3);
-            VPR_AND(4, 4, 5);
-            VPR_SRLW_IMM(4, 4, 1);
-            VPR_SUBUW(6, 2, 4);
+	        VPR_OR_NS(2, 0, 1);
+	        VPR_AND_NS(3, 0, 1);
+	        VPR_SUBUW_NS(4, 2, 3);
+	        VPR_AND_NS(4, 4, 5);
+	        VPR_SRLW_IMM_NS(4, 4, 1);
+	        VPR_SUBUW_NS(6, 2, 4);
             SA0_VPR_AT(6, vr);
             AV_WN32A(block,      vr[0]);
             AV_WN32A(block + 4,  vr[1]);
@@ -464,12 +464,12 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);
-            VPR_AND(3, 0, 1);
-            VPR_SUBUW(4, 2, 3);
-            VPR_AND(4, 4, 5);
-            VPR_SRLW_IMM(4, 4, 1);
-            VPR_SUBUW(6, 2, 4);
+	        VPR_OR_NS(2, 0, 1);
+	        VPR_AND_NS(3, 0, 1);
+	        VPR_SUBUW_NS(4, 2, 3);
+	        VPR_AND_NS(4, 4, 5);
+	        VPR_SRLW_IMM_NS(4, 4, 1);
+	        VPR_SUBUW_NS(6, 2, 4);
             SA0_VPR_AT(6, vr);
             AV_WN32A(block,      vr[0]);
             AV_WN32A(block + 4,  vr[1]);
@@ -506,12 +506,12 @@ void ff_put_pixels16_y2_mxu(uint8_t *block, const uint8_t *pixels,
             vb[4] = vb[5] = vb[6] = vb[7] = vb[8] = vb[9] = vb[10] = vb[11] = vb[12] = vb[13] = vb[14] = vb[15] = 0;
             LA0_VPR_AT(0, va);
             LA0_VPR_AT(1, vb);
-            VPR_OR(2, 0, 1);
-            VPR_AND(3, 0, 1);
-            VPR_SUBUW(4, 2, 3);
-            VPR_AND(4, 4, 5);
-            VPR_SRLW_IMM(4, 4, 1);
-            VPR_SUBUW(6, 2, 4);
+	        VPR_OR_NS(2, 0, 1);
+	        VPR_AND_NS(3, 0, 1);
+	        VPR_SUBUW_NS(4, 2, 3);
+	        VPR_AND_NS(4, 4, 5);
+	        VPR_SRLW_IMM_NS(4, 4, 1);
+	        VPR_SUBUW_NS(6, 2, 4);
             SA0_VPR_AT(6, vr);
             AV_WN32A(block,      vr[0]);
             AV_WN32A(block + 4,  vr[1]);
