@@ -348,6 +348,14 @@
     __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
         "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 8)) : "memory")
 
+#define VPR_ADDUW(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 2)) : "memory")
+
+#define VPR_SUBUW(vrd, vrs, vrp) \
+    __asm__ __volatile__(".word %0\n\tsync\n\t" :: \
+        "i"(MXUV3_COP2_INST(20, vrs, vrp, vrd, 10)) : "memory")
+
 /* ------------------------------------------------------------------ */
 /*  VPR bitwise logic (rs=16, hardware-probed on A1/T41)               */
 /* ------------------------------------------------------------------ */
