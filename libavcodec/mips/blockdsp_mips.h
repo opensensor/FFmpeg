@@ -34,4 +34,7 @@ void ff_fill_block8_mmi(uint8_t *block, uint8_t value, ptrdiff_t line_size, int 
 void ff_clear_block_mmi(int16_t *block);
 void ff_clear_blocks_mmi(int16_t *block);
 
+void ff_clear_block_mxu(int16_t *block);
+void ff_clear_blocks_mxu(int16_t *block);
+
 #endif  // #ifndef AVCODEC_MIPS_BLOCKDSP_MIPS_H

@@ -22,6 +22,7 @@
 #include "libavutil/mips/cpu.h"
 #include "libavcodec/pixblockdsp.h"
 #include "pixblockdsp_mips.h"
+#include "mxu.h"
 
 void ff_pixblockdsp_init_mips(PixblockDSPContext *c,
                               unsigned high_bit_depth)
@@ -39,5 +40,13 @@ void ff_pixblockdsp_init_mips(PixblockDSPContext *c,
         c->diff_pixels = ff_diff_pixels_msa;
 
         c->get_pixels = high_bit_depth ? ff_get_pixels_16_msa : ff_get_pixels_8_msa;
+    }
+
+    if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
+        c->diff_pixels = ff_diff_pixels_mxu;
+
+        if (!high_bit_depth)
+            c->get_pixels = ff_get_pixels_8_mxu;
     }
 }

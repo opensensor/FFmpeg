@@ -50,4 +50,17 @@ void ff_simple_idct_8_mmi(int16_t *block);
 void ff_simple_idct_put_8_mmi(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
 void ff_simple_idct_add_8_mmi(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
 
+void ff_put_pixels_clamped_mxu(const int16_t *block,
+                                uint8_t *restrict pixels,
+                                ptrdiff_t line_size);
+void ff_put_signed_pixels_clamped_mxu(const int16_t *block,
+                                       uint8_t *restrict pixels,
+                                       ptrdiff_t line_size);
+void ff_add_pixels_clamped_mxu(const int16_t *block,
+                                uint8_t *restrict pixels,
+                                ptrdiff_t line_size);
+void ff_simple_idct_mxu(int16_t *block);
+void ff_simple_idct_put_mxu(uint8_t *dest, ptrdiff_t stride, int16_t *block);
+void ff_simple_idct_add_mxu(uint8_t *dest, ptrdiff_t stride, int16_t *block);
+
 #endif  // #ifndef AVCODEC_MIPS_IDCTDSP_MIPS_H

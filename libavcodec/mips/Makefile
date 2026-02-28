@@ -113,3 +113,10 @@ MMI-OBJS-$(CONFIG_WMV2DSP)                += mips/wmv2dsp_mmi.o
 MMI-OBJS-$(CONFIG_HEVC_DECODER)           += mips/hevcdsp_mmi.o
 MMI-OBJS-$(CONFIG_VP3DSP)                 += mips/vp3dsp_idct_mmi.o
 MMI-OBJS-$(CONFIG_VP9_DECODER)            += mips/vp9_mc_mmi.o
+
+MXU-OBJS-$(CONFIG_BLOCKDSP)               += mips/blockdsp_mxu.o
+MXU-OBJS-$(CONFIG_PIXBLOCKDSP)            += mips/pixblockdsp_mxu.o
+MXU-OBJS-$(CONFIG_HPELDSP)                += mips/hpeldsp_mxu.o
+MXU-OBJS-$(CONFIG_IDCTDSP)                += mips/idctdsp_mxu.o
+MXU-OBJS-$(CONFIG_H264DSP)                += mips/h264dsp_mxu.o
+MXU-OBJS-$(CONFIG_H264QPEL)               += mips/h264qpel_mxu.o

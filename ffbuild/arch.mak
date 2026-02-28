@@ -12,6 +12,7 @@ OBJS-$(HAVE_MIPSDSP)   += $(MIPSDSP-OBJS)    $(MIPSDSP-OBJS-yes)
 OBJS-$(HAVE_MIPSDSPR2) += $(MIPSDSPR2-OBJS)  $(MIPSDSPR2-OBJS-yes)
 OBJS-$(HAVE_MSA)       += $(MSA-OBJS)        $(MSA-OBJS-yes)
 OBJS-$(HAVE_MMI)       += $(MMI-OBJS)        $(MMI-OBJS-yes)
+OBJS-$(HAVE_MXU)       += $(MXU-OBJS)        $(MXU-OBJS-yes)
 OBJS-$(HAVE_LSX)       += $(LSX-OBJS)        $(LSX-OBJS-yes)
 OBJS-$(HAVE_LASX)      += $(LASX-OBJS)       $(LASX-OBJS-yes)
 

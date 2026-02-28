@@ -94,6 +94,14 @@ static int cpu_flags_cpuinfo(void)
                 flags |= AV_CPU_FLAG_MMI;
             if (strstr(buf, " msa"))
                 flags |= AV_CPU_FLAG_MSA;
+            /*
+             * mxuv3 (XBurst2) uses a different ISA (VPR/COP2) from
+             * legacy MXU (xr/SPECIAL2 on XBurst1).  The MXU-flagged
+             * functions in FFmpeg have been rewritten to use pure
+             * MIPS32r2 scalar code, so they are safe on both platforms.
+             */
+            if (strstr(buf, " mxu"))
+                flags |= AV_CPU_FLAG_MXU;
 
             break;
         }
@@ -106,10 +114,25 @@ static int cpu_flags_cpuinfo(void)
 int ff_get_cpu_flags_mips(void)
 {
 #if defined __linux__ || defined __ANDROID__
+    int flags;
+
     if (cpucfg_available())
-        return cpu_flags_cpucfg();
+        flags = cpu_flags_cpucfg();
     else
-        return cpu_flags_cpuinfo();
+        flags = cpu_flags_cpuinfo();
+
+    /*
+     * If FFmpeg was built with MXU enabled (mxuv3_select="mxu" in this tree),
+     * don't rely on /proc/cpuinfo tokens to opt-in at runtime.
+     *
+     * This matches the expectation for fixed-target firmware builds where
+     * --enable-mxuv3 is passed explicitly.
+     */
+#if HAVE_MXU || HAVE_MXUV3
+    flags |= AV_CPU_FLAG_MXU;
+#endif
+
+    return flags;
 #else
     /* Assume no SIMD ASE supported */
     return 0;
@@ -119,6 +142,19 @@ int ff_get_cpu_flags_mips(void)
 size_t ff_get_cpu_max_align_mips(void)
 {
     int flags = av_get_cpu_flags();
+
+    /*
+     * When built with --enable-mxuv3, FFmpeg may use Ingenic XBurst2
+     * MXUv3 VPR (512-bit) load/store instructions (e.g. SA0/LA0).
+     * Those require 64-byte alignment for fast/defined operation.
+     *
+     * mxuv3 is feature-gated as AV_CPU_FLAG_MXU in this tree.
+     */
+
+#if HAVE_SIMD_ALIGN_64
+    if (flags & AV_CPU_FLAG_MXU)
+        return 64;
+#endif
 
     if (flags & AV_CPU_FLAG_MSA)
         return 16;

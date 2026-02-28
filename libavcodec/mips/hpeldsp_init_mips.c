@@ -22,6 +22,7 @@
 #include "libavutil/mips/cpu.h"
 #include "../hpeldsp.h"
 #include "libavcodec/mips/hpeldsp_mips.h"
+#include "mxu.h"
 
 void ff_hpeldsp_init_mips(HpelDSPContext *c, int flags)
 {
@@ -108,5 +109,48 @@ void ff_hpeldsp_init_mips(HpelDSPContext *c, int flags)
         c->avg_pixels_tab[2][1] = ff_avg_pixels4_x2_msa;
         c->avg_pixels_tab[2][2] = ff_avg_pixels4_y2_msa;
         c->avg_pixels_tab[2][3] = ff_avg_pixels4_xy2_msa;
+    }
+
+    if (have_mxu(cpu_flags)) {
+        ff_mxu_ensure_cu2();
+        c->put_pixels_tab[0][0] = ff_put_pixels16_mxu;
+        c->put_pixels_tab[0][1] = ff_put_pixels16_x2_mxu;
+        c->put_pixels_tab[0][2] = ff_put_pixels16_y2_mxu;
+        c->put_pixels_tab[0][3] = ff_put_pixels16_xy2_mxu;
+
+        c->put_pixels_tab[1][0] = ff_put_pixels8_mxu;
+        c->put_pixels_tab[1][1] = ff_put_pixels8_x2_mxu;
+        c->put_pixels_tab[1][2] = ff_put_pixels8_y2_mxu;
+        c->put_pixels_tab[1][3] = ff_put_pixels8_xy2_mxu;
+
+        c->put_pixels_tab[2][0] = ff_put_pixels4_mxu;
+        c->put_pixels_tab[2][1] = ff_put_pixels4_x2_mxu;
+        c->put_pixels_tab[2][2] = ff_put_pixels4_y2_mxu;
+        c->put_pixels_tab[2][3] = ff_put_pixels4_xy2_mxu;
+
+        c->put_no_rnd_pixels_tab[0][0] = ff_put_pixels16_mxu;
+        c->put_no_rnd_pixels_tab[0][1] = ff_put_no_rnd_pixels16_x2_mxu;
+        c->put_no_rnd_pixels_tab[0][2] = ff_put_no_rnd_pixels16_y2_mxu;
+        c->put_no_rnd_pixels_tab[0][3] = ff_put_no_rnd_pixels16_xy2_mxu;
+
+        c->put_no_rnd_pixels_tab[1][0] = ff_put_pixels8_mxu;
+        c->put_no_rnd_pixels_tab[1][1] = ff_put_no_rnd_pixels8_x2_mxu;
+        c->put_no_rnd_pixels_tab[1][2] = ff_put_no_rnd_pixels8_y2_mxu;
+        c->put_no_rnd_pixels_tab[1][3] = ff_put_no_rnd_pixels8_xy2_mxu;
+
+        c->avg_pixels_tab[0][0] = ff_avg_pixels16_mxu;
+        c->avg_pixels_tab[0][1] = ff_avg_pixels16_x2_mxu;
+        c->avg_pixels_tab[0][2] = ff_avg_pixels16_y2_mxu;
+        c->avg_pixels_tab[0][3] = ff_avg_pixels16_xy2_mxu;
+
+        c->avg_pixels_tab[1][0] = ff_avg_pixels8_mxu;
+        c->avg_pixels_tab[1][1] = ff_avg_pixels8_x2_mxu;
+        c->avg_pixels_tab[1][2] = ff_avg_pixels8_y2_mxu;
+        c->avg_pixels_tab[1][3] = ff_avg_pixels8_xy2_mxu;
+
+        c->avg_pixels_tab[2][0] = ff_avg_pixels4_mxu;
+        c->avg_pixels_tab[2][1] = ff_avg_pixels4_x2_mxu;
+        c->avg_pixels_tab[2][2] = ff_avg_pixels4_y2_mxu;
+        c->avg_pixels_tab[2][3] = ff_avg_pixels4_xy2_mxu;
     }
 }
