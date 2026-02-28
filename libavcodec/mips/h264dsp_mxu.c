@@ -238,10 +238,12 @@ void ff_h264_add_pixels4_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
     for (i = 0; i < 4; i++) {
-        dst[0] += (unsigned)block[0];
-        dst[1] += (unsigned)block[1];
-        dst[2] += (unsigned)block[2];
-        dst[3] += (unsigned)block[3];
+        uint32_t p = AV_RN32A(dst);
+        AV_WN32A(dst,
+            (uint8_t)(( p        & 0xFF) + (unsigned)block[0])        |
+            ((uint8_t)(((p >>  8) & 0xFF) + (unsigned)block[1]) <<  8) |
+            ((uint8_t)(((p >> 16) & 0xFF) + (unsigned)block[2]) << 16) |
+            ((uint8_t)(( p >> 24)         + (unsigned)block[3]) << 24));
         dst   += stride;
         block += 4;
     }
@@ -254,14 +256,18 @@ void ff_h264_add_pixels8_8_mxu(uint8_t *dst, int16_t *block, int stride)
 {
     int i;
     for (i = 0; i < 8; i++) {
-        dst[0] += (unsigned)block[0];
-        dst[1] += (unsigned)block[1];
-        dst[2] += (unsigned)block[2];
-        dst[3] += (unsigned)block[3];
-        dst[4] += (unsigned)block[4];
-        dst[5] += (unsigned)block[5];
-        dst[6] += (unsigned)block[6];
-        dst[7] += (unsigned)block[7];
+        uint32_t p0 = AV_RN32A(dst);
+        uint32_t p1 = AV_RN32A(dst + 4);
+        AV_WN32A(dst,
+            (uint8_t)(( p0        & 0xFF) + (unsigned)block[0])        |
+            ((uint8_t)(((p0 >>  8) & 0xFF) + (unsigned)block[1]) <<  8) |
+            ((uint8_t)(((p0 >> 16) & 0xFF) + (unsigned)block[2]) << 16) |
+            ((uint8_t)(( p0 >> 24)         + (unsigned)block[3]) << 24));
+        AV_WN32A(dst + 4,
+            (uint8_t)(( p1        & 0xFF) + (unsigned)block[4])        |
+            ((uint8_t)(((p1 >>  8) & 0xFF) + (unsigned)block[5]) <<  8) |
+            ((uint8_t)(((p1 >> 16) & 0xFF) + (unsigned)block[6]) << 16) |
+            ((uint8_t)(( p1 >> 24)         + (unsigned)block[7]) << 24));
         dst   += stride;
         block += 8;
     }
